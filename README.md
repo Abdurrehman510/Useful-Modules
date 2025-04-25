@@ -1,106 +1,141 @@
-# Python Utility Scripts
+Python Utility Scripts 🐍
+A collection of powerful Python scripts to automate everyday tasks and boost productivity.
 
-Welcome to the **Python Utility Scripts** repository! This project contains a collection of Python scripts designed to perform common tasks, such as finding the storage of a folder, generating QR codes, organizing files, and much more.
+Python Version
+License: MIT
+PRs Welcome
 
-## Table of Contents
-- [Features](#features)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Scripts Overview](#scripts-overview)
-- [Contributing](#contributing)
-- [License](#license)
+🚀 Introduction
+This repository hosts a curated set of Python scripts designed to simplify common workflows. Whether you need to analyze disk usage, generate QR codes, organize cluttered directories, or automate other routine tasks, these scripts have you covered. Perfect for developers, sysadmins, and productivity enthusiasts!
 
----
+✨ Features
+Core Scripts
+📂 Storage Finder
+Recursively calculate folder size with human-readable output (MB/GB/TB).
 
-## Features
+🔳 QR Code Generator
+Generate customizable QR codes in PNG/SVG format with size and color options.
 
-- **Storage Finder**: Calculate and display the storage size of a folder.
-- **QR Code Generator**: Create QR codes for text, URLs, or other data.
-- **File Organizer**: Automatically organize files in a directory based on their types (e.g., images, documents, videos).
-- **Additional Scripts**: More utility scripts for everyday tasks.
+🗂 File Organizer
+Automatically sort files into category-based folders (Documents, Images, Videos, etc.).
 
----
+Additional Utilities
+🌐 URL Shortener (coming soon)
 
-## Installation
+📷 Image Converter (coming soon)
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/your-username/python-utility-scripts.git
-   cd python-utility-scripts
-   ```
+🔒 File Encryptor (coming soon)
 
-2. Install the required packages:
-   ```bash
-   pip install -r requirements.txt
-   ```
+⚙️ Installation
+Prerequisites
+Python 3.6 or higher
 
----
+pip package manager
 
-## Usage
+Steps
+Clone the repository:
 
-Run the desired script using Python:
+bash
+git clone https://github.com/your-username/python-utility-scripts.git
+cd python-utility-scripts
+(Optional) Create a virtual environment:
 
-```bash
-python script_name.py
-```
+bash
+python -m venv venv
+source venv/bin/activate  # Linux/MacOS
+venv\Scripts\activate    # Windows
+Install dependencies:
 
-For example:
-- To find the storage of a folder:
-  ```bash
-  python storage_finder.py /path/to/folder
-  ```
-- To generate a QR code:
-  ```bash
-  python qr_code_generator.py "https://example.com"
-  ```
-- To organize files in a directory:
-  ```bash
-  python file_organizer.py /path/to/directory
-  ```
+bash
+pip install -r requirements.txt
+🛠 Usage
+General Syntax
+bash
+python script_name.py [arguments] [options]
+Script Examples
+1. Storage Finder
+Calculate the size of a folder and its subdirectories:
 
----
+bash
+python storage_finder.py /path/to/folder
+Options:
 
-## Scripts Overview
+--unit [B/KB/MB/GB]: Specify output unit (default: auto-detected).
 
-### 1. Storage Finder
-- **File**: `storage_finder.py`
-- **Description**: Calculates the total storage used by a folder and its subfolders.
+--exclude-hidden: Ignore hidden files and directories.
 
-### 2. QR Code Generator
-- **File**: `qr_code_generator.py`
-- **Description**: Generates QR codes for any input data and saves them as images.
+2. QR Code Generator
+Generate a QR code for a URL and save as PNG:
 
-### 3. File Organizer
-- **File**: `file_organizer.py`
-- **Description**: Organizes files in a directory into subfolders based on file types.
+bash
+python qr_code_generator.py "https://example.com" --output example_qr.png --size 10 --color blue
+Options:
 
-### 4. Additional Scripts
-- Add descriptions of other scripts as you add them to the repository.
+--output <filename>: Output file name (supports .png/.svg).
 
----
+--size <int>: QR code pixel size per module (default: 10).
 
-## Contributing
+--color <color_name>: QR code color (default: black).
 
-Contributions are welcome! If you have ideas for new scripts or improvements, please fork the repository and submit a pull request.
+3. File Organizer
+Organize files in the Downloads folder:
 
-1. Fork the repository.
-2. Create a new branch:
-   ```bash
-   git checkout -b feature-name
-   ```
-3. Commit your changes and push them:
-   ```bash
-   git commit -m "Add new feature"
-   git push origin feature-name
-   ```
-4. Open a pull request.
+bash
+python file_organizer.py ~/Downloads --dry-run
+Options:
 
----
+--dry-run: Preview changes without moving files.
 
-## License
+--log: Generate a log file of moved items.
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+📚 Scripts Overview
+storage_finder.py
+Description: Recursively scans directories to calculate total storage usage.
 
----
+Dependencies: os, sys, humanize
 
-Happy scripting! 🎉
+qr_code_generator.py
+Description: Generates QR codes with customizable size, color, and format.
+
+Dependencies: qrcode, Pillow
+
+file_organizer.py
+Description: Organizes files into predefined categories (e.g., .pdf → Documents).
+Supported Categories:
+
+📁 Documents: PDF, DOCX, TXT
+
+🖼 Images: JPG, PNG, GIF
+
+🎥 Videos: MP4, AVI, MOV
+
+🎵 Audio: MP3, WAV
+
+📦 Archives: ZIP, RAR
+
+🤝 Contributing
+We welcome contributions! Please follow these steps:
+
+Read our Contributing Guidelines.
+
+Fork the repository and create a feature branch.
+
+Ensure your code passes all tests (add tests if applicable).
+
+Submit a Pull Request with a detailed description of changes.
+
+Got an idea for a script?
+Open an issue using the Feature Request Template.
+
+📜 License
+Distributed under the MIT License. See LICENSE for details.
+
+💬 Support
+Reach out for help or feedback:
+
+Open an Issue
+
+✉️ Email: your-email@example.com
+
+Happy Coding! 🎉
+
