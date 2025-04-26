@@ -1,4 +1,3 @@
-```markdown
 # Python Utility Scripts 🐍
 
 **A collection of powerful Python scripts to automate everyday tasks and boost productivity.**
