@@ -122,7 +122,7 @@ Distributed under the MIT License. See [LICENSE](LICENSE) for details.
 
 Reach out for help or feedback:
 - [Open an Issue](https://github.com/your-username/python-utility-scripts/issues)
-- ✉️ Email: your-email@example.com
+- ✉️ Email: abdurrehmannarmawala510@gmail.com
 
 ---
 
