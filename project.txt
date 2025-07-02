@@ -1,0 +1,4075 @@
+Complete Stock Market Analysis Tool Implementation
+I'll provide the complete implementation with every file and all code content. Let's start with the project structure and then each file's content.
+
+Project Structure
+text
+stock_analysis_tool/
+├── data/
+├── docs/
+├── tests/
+│   ├── test_data_collection.py
+│   ├── test_processing.py
+│   ├── test_analytics.py
+│   └── test_visualization.py
+├── config/
+│   └── settings.py
+├── src/
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── data/
+│   │   │   ├── __init__.py
+│   │   │   ├── collectors/
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── yahoo_finance.py
+│   │   │   │   ├── alpha_vantage.py
+│   │   │   │   └── nse_bse.py
+│   │   │   ├── cleaners/
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── data_cleaner.py
+│   │   │   │   └── normalizer.py
+│   │   │   └── storage/
+│   │   │       ├── __init__.py
+│   │   │       ├── database.py
+│   │   │       └── cache.py
+│   │   ├── processing/
+│   │   │   ├── __init__.py
+│   │   │   ├── technical_indicators.py
+│   │   │   ├── fundamental_analysis.py
+│   │   │   └── correlation.py
+│   │   ├── analytics/
+│   │   │   ├── __init__.py
+│   │   │   ├── prediction_models.py
+│   │   │   ├── time_series.py
+│   │   │   └── volatility.py
+│   │   ├── visualization/
+│   │   │   ├── __init__.py
+│   │   │   ├── charts.py
+│   │   │   └── dashboard.py
+│   │   ├── recommendation/
+│   │   │   ├── __init__.py
+│   │   │   ├── scoring.py
+│   │   │   └── portfolio.py
+│   │   └── portfolio/
+│   │       ├── __init__.py
+│   │       ├── tracker.py
+│   │       └── risk.py
+│   ├── api/
+│   │   ├── __init__.py
+│   │   ├── endpoints.py
+│   │   └── schemas.py
+│   ├── web/
+│   │   ├── __init__.py
+│   │   └── dashboard.py
+│   └── utils/
+│       ├── __init__.py
+│       ├── logger.py
+│       └── helpers.py
+├── requirements.txt
+├── Dockerfile
+└── README.md
+File Contents
+1. Configuration Files
+config/settings.py
+python
+import os
+from pathlib import Path
+from typing import Dict, Any
+
+class Settings:
+    # Database configuration
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/stockdb")
+    
+    # API Keys
+    ALPHA_VANTAGE_API_KEY: str = os.getenv("ALPHA_VANTAGE_API_KEY", "demo")
+    YAHOO_FINANCE_API_KEY: str = os.getenv("YAHOO_FINANCE_API_KEY", "")
+    
+    # Data collection settings
+    DATA_CACHE_DIR: Path = Path("./data/cache")
+    HISTORICAL_DATA_DAYS: int = 365 * 5  # 5 years
+    
+    # Logging configuration
+    LOG_LEVEL: str = "INFO"
+    LOG_FILE: Path = Path("./logs/stock_analysis.log")
+    
+    # Model parameters
+    MODEL_PARAMS: Dict[str, Any] = {
+        "random_forest": {
+            "n_estimators": 100,
+            "max_depth": None,
+            "random_state": 42
+        },
+        "lstm": {
+            "units": 50,
+            "activation": "relu",
+            "epochs": 20,
+            "batch_size": 32
+        }
+    }
+    
+    # Recommendation weights
+    RECOMMENDATION_WEIGHTS: Dict[str, float] = {
+        'momentum': 0.3,
+        'value': 0.25,
+        'growth': 0.2,
+        'quality': 0.15,
+        'risk': 0.1
+    }
+
+settings = Settings()
+2. Data Collection Module
+src/core/data/collectors/yahoo_finance.py
+python
+import yfinance as yf
+import pandas as pd
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Union
+from ..storage.cache import DataCache
+from config.settings import settings
+
+class YahooFinanceCollector:
+    def __init__(self, ticker: str, cache: bool = True):
+        self.ticker = ticker
+        self.stock = yf.Ticker(ticker)
+        self.cache = DataCache() if cache else None
+        
+    def get_historical_data(
+        self, 
+        period: str = "1y", 
+        interval: str = "1d",
+        start: Optional[str] = None,
+        end: Optional[str] = None,
+        use_cache: bool = True
+    ) -> pd.DataFrame:
+        cache_key = f"{self.ticker}_{period}_{interval}_{start}_{end}"
+        
+        if use_cache and self.cache and self.cache.exists(cache_key):
+            return self.cache.get(cache_key)
+            
+        if start and end:
+            data = self.stock.history(start=start, end=end, interval=interval)
+        else:
+            data = self.stock.history(period=period, interval=interval)
+        
+        if self.cache:
+            self.cache.set(cache_key, data)
+            
+        return data
+    
+    def get_fundamentals(self) -> Dict[str, Union[float, str, int]]:
+        info = self.stock.info
+        fundamentals = {
+            'pe_ratio': info.get('trailingPE', None),
+            'pb_ratio': info.get('priceToBook', None),
+            'debt_equity': info.get('debtToEquity', None),
+            'dividend_yield': info.get('dividendYield', None),
+            'market_cap': info.get('marketCap', None),
+            'eps': info.get('trailingEps', None),
+            'beta': info.get('beta', None),
+            '52_week_high': info.get('fiftyTwoWeekHigh', None),
+            '52_week_low': info.get('fiftyTwoWeekLow', None),
+            'sector': info.get('sector', None),
+            'industry': info.get('industry', None),
+            'company_name': info.get('longName', None)
+        }
+        return {k: v for k, v in fundamentals.items() if v is not None}
+    
+    def get_dividends(self) -> pd.DataFrame:
+        return self.stock.dividends
+    
+    def get_splits(self) -> pd.DataFrame:
+        return self.stock.splits
+    
+    def get_actions(self) -> pd.DataFrame:
+        return self.stock.actions
+    
+    def get_current_price(self) -> float:
+        hist = self.stock.history(period="1d")
+        return hist['Close'].iloc[-1] if not hist.empty else None
+src/core/data/collectors/alpha_vantage.py
+python
+from alpha_vantage.timeseries import TimeSeries
+from alpha_vantage.fundamentals import Fundamentals
+from typing import Dict, Optional
+import pandas as pd
+from ..storage.cache import DataCache
+from config.settings import settings
+
+class AlphaVantageCollector:
+    def __init__(self, cache: bool = True):
+        self.ts = TimeSeries(key=settings.ALPHA_VANTAGE_API_KEY, output_format='pandas')
+        self.fund = Fundamentals(key=settings.ALPHA_VANTAGE_API_KEY)
+        self.cache = DataCache() if cache else None
+        
+    def get_intraday_data(
+        self, 
+        symbol: str, 
+        interval: str = '5min', 
+        outputsize: str = 'compact',
+        use_cache: bool = True
+    ) -> pd.DataFrame:
+        cache_key = f"AV_{symbol}_intraday_{interval}_{outputsize}"
+        
+        if use_cache and self.cache and self.cache.exists(cache_key):
+            return self.cache.get(cache_key)
+            
+        data, _ = self.ts.get_intraday(
+            symbol=symbol, 
+            interval=interval, 
+            outputsize=outputsize
+        )
+        
+        if self.cache:
+            self.cache.set(cache_key, data)
+            
+        return data
+    
+    def get_daily_data(
+        self, 
+        symbol: str, 
+        outputsize: str = 'compact',
+        use_cache: bool = True
+    ) -> pd.DataFrame:
+        cache_key = f"AV_{symbol}_daily_{outputsize}"
+        
+        if use_cache and self.cache and self.cache.exists(cache_key):
+            return self.cache.get(cache_key)
+            
+        data, _ = self.ts.get_daily(
+            symbol=symbol, 
+            outputsize=outputsize
+        )
+        
+        if self.cache:
+            self.cache.set(cache_key, data)
+            
+        return data
+    
+    def get_company_overview(self, symbol: str) -> Dict[str, Optional[str]]:
+        cache_key = f"AV_{symbol}_overview"
+        
+        if self.cache and self.cache.exists(cache_key):
+            return self.cache.get(cache_key)
+            
+        data, _ = self.fund.get_company_overview(symbol=symbol)
+        
+        if self.cache:
+            self.cache.set(cache_key, data)
+            
+        return data
+src/core/data/collectors/nse_bse.py
+python
+import requests
+import pandas as pd
+from typing import Dict, Optional
+from datetime import datetime
+from ..storage.cache import DataCache
+from config.settings import settings
+
+class NSECollector:
+    BASE_URL = "https://www.nseindia.com/api"
+    
+    def __init__(self, cache: bool = True):
+        self.session = requests.Session()
+        self.session.headers.update({
+            "User-Agent": "Mozilla/5.0",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br"
+        })
+        self.cache = DataCache() if cache else None
+        
+    def _get_cookies(self):
+        # NSE requires cookies for API access
+        self.session.get("https://www.nseindia.com")
+        
+    def get_index_data(self, index_name: str = "NIFTY 50") -> Dict:
+        cache_key = f"NSE_{index_name}_data"
+        
+        if self.cache and self.cache.exists(cache_key):
+            return self.cache.get(cache_key)
+            
+        self._get_cookies()
+        url = f"{self.BASE_URL}/equity-stockIndices?index={index_name.replace(' ', '%20')}"
+        response = self.session.get(url)
+        response.raise_for_status()
+        data = response.json()
+        
+        if self.cache:
+            self.cache.set(cache_key, data)
+            
+        return data
+    
+    def get_historical_data(
+        self, 
+        symbol: str, 
+        from_date: str, 
+        to_date: str
+    ) -> pd.DataFrame:
+        cache_key = f"NSE_{symbol}_historical_{from_date}_{to_date}"
+        
+        if self.cache and self.cache.exists(cache_key):
+            return self.cache.get(cache_key)
+            
+        self._get_cookies()
+        url = f"{self.BASE_URL}/historical/cm/equity?symbol={symbol}&series=[%22EQ%22]&from={from_date}&to={to_date}"
+        response = self.session.get(url)
+        response.raise_for_status()
+        data = response.json()
+        
+        df = pd.DataFrame(data['data'])
+        df['TIMESTAMP'] = pd.to_datetime(df['TIMESTAMP'])
+        df.set_index('TIMESTAMP', inplace=True)
+        
+        if self.cache:
+            self.cache.set(cache_key, df)
+            
+        return df
+src/core/data/cleaners/data_cleaner.py
+python
+import pandas as pd
+from typing import Optional
+import numpy as np
+
+class DataCleaner:
+    @staticmethod
+    def clean_stock_data(
+        df: pd.DataFrame, 
+        fill_method: str = 'ffill',
+        remove_zeros: bool = True,
+        remove_outliers: bool = True,
+        z_threshold: float = 3.0
+    ) -> pd.DataFrame:
+        """
+        Clean stock data by handling missing values, zeros, and outliers
+        
+        Args:
+            df: Input DataFrame with stock data
+            fill_method: Method to fill missing values ('ffill', 'bfill', 'interpolate')
+            remove_zeros: Whether to remove rows with zero values
+            remove_outliers: Whether to remove statistical outliers
+            z_threshold: Z-score threshold for outlier detection
+            
+        Returns:
+            Cleaned DataFrame
+        """
+        # Make a copy to avoid modifying the original
+        cleaned = df.copy()
+        
+        # Handle missing values
+        if fill_method == 'ffill':
+            cleaned = cleaned.ffill()
+        elif fill_method == 'bfill':
+            cleaned = cleaned.bfill()
+        elif fill_method == 'interpolate':
+            cleaned = cleaned.interpolate()
+        
+        # Remove rows with zero values in key columns
+        if remove_zeros:
+            zero_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+            cleaned = cleaned.replace(0, np.nan)
+            cleaned = cleaned.dropna(subset=zero_cols)
+        
+        # Remove outliers using z-score
+        if remove_outliers:
+            numeric_cols = cleaned.select_dtypes(include=[np.number]).columns
+            for col in numeric_cols:
+                z = np.abs((cleaned[col] - cleaned[col].mean()) / cleaned[col].std())
+                cleaned = cleaned[z < z_threshold]
+        
+        return cleaned
+    
+    @staticmethod
+    def normalize_data(
+        df: pd.DataFrame, 
+        method: str = 'minmax',
+        columns: Optional[list] = None
+    ) -> pd.DataFrame:
+        """
+        Normalize data using specified method
+        
+        Args:
+            df: Input DataFrame
+            method: Normalization method ('minmax', 'zscore', 'log')
+            columns: Columns to normalize (None for all numeric columns)
+            
+        Returns:
+            Normalized DataFrame
+        """
+        if columns is None:
+            columns = df.select_dtypes(include=[np.number]).columns
+            
+        normalized = df.copy()
+        
+        if method == 'minmax':
+            for col in columns:
+                normalized[col] = (df[col] - df[col].min()) / (df[col].max() - df[col].min())
+        elif method == 'zscore':
+            for col in columns:
+                normalized[col] = (df[col] - df[col].mean()) / df[col].std()
+        elif method == 'log':
+            for col in columns:
+                normalized[col] = np.log1p(df[col])
+                
+        return normalized
+src/core/data/storage/database.py
+python
+import sqlalchemy
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from datetime import datetime
+from typing import Optional
+from config.settings import settings
+
+Base = declarative_base()
+
+class StockData(Base):
+    __tablename__ = 'stock_data'
+    
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String(10), nullable=False)
+    date = Column(DateTime, nullable=False)
+    open = Column(Float)
+    high = Column(Float)
+    low = Column(Float)
+    close = Column(Float)
+    volume = Column(Integer)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<StockData(symbol={self.symbol}, date={self.date}, close={self.close})>"
+
+class DatabaseManager:
+    def __init__(self):
+        self.engine = create_engine(settings.DATABASE_URL)
+        self.Session = sessionmaker(bind=self.engine)
+        Base.metadata.create_all(self.engine)
+        
+    def save_stock_data(self, symbol: str, data: pd.DataFrame) -> None:
+        """Save stock data to database"""
+        session = self.Session()
+        
+        try:
+            for index, row in data.iterrows():
+                stock_data = StockData(
+                    symbol=symbol,
+                    date=index.to_pydatetime(),
+                    open=row['Open'],
+                    high=row['High'],
+                    low=row['Low'],
+                    close=row['Close'],
+                    volume=row['Volume']
+                )
+                session.add(stock_data)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            session.close()
+    
+    def get_stock_data(
+        self, 
+        symbol: str, 
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> pd.DataFrame:
+        """Retrieve stock data from database"""
+        session = self.Session()
+        
+        try:
+            query = session.query(StockData).filter(StockData.symbol == symbol)
+            
+            if start_date:
+                query = query.filter(StockData.date >= start_date)
+            if end_date:
+                query = query.filter(StockData.date <= end_date)
+                
+            results = query.order_by(StockData.date).all()
+            
+            if not results:
+                return pd.DataFrame()
+                
+            data = {
+                'Open': [r.open for r in results],
+                'High': [r.high for r in results],
+                'Low': [r.low for r in results],
+                'Close': [r.close for r in results],
+                'Volume': [r.volume for r in results],
+                'Date': [r.date for r in results]
+            }
+            
+            df = pd.DataFrame(data)
+            df.set_index('Date', inplace=True)
+            return df
+            
+        finally:
+            session.close()
+src/core/data/storage/cache.py
+python
+import pickle
+from pathlib import Path
+from typing import Any
+import hashlib
+import pandas as pd
+from config.settings import settings
+
+class DataCache:
+    def __init__(self, cache_dir: Path = None):
+        self.cache_dir = cache_dir or settings.DATA_CACHE_DIR
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        
+    def _get_cache_path(self, key: str) -> Path:
+        """Generate cache file path from key"""
+        key_hash = hashlib.md5(key.encode()).hexdigest()
+        return self.cache_dir / f"{key_hash}.pkl"
+        
+    def exists(self, key: str) -> bool:
+        """Check if cached data exists"""
+        return self._get_cache_path(key).exists()
+        
+    def get(self, key: str) -> Any:
+        """Retrieve cached data"""
+        cache_file = self._get_cache_path(key)
+        if not cache_file.exists():
+            raise ValueError(f"No cached data for key: {key}")
+            
+        with open(cache_file, 'rb') as f:
+            return pickle.load(f)
+            
+    def set(self, key: str, data: Any) -> None:
+        """Store data in cache"""
+        cache_file = self._get_cache_path(key)
+        
+        with open(cache_file, 'wb') as f:
+            pickle.dump(data, f)
+            
+    def clear(self, key: str = None) -> None:
+        """Clear cache for specific key or entire cache"""
+        if key:
+            cache_file = self._get_cache_path(key)
+            if cache_file.exists():
+                cache_file.unlink()
+        else:
+            for file in self.cache_dir.glob("*.pkl"):
+                file.unlink()
+3. Data Processing Engine
+src/core/processing/technical_indicators.py
+python
+import pandas as pd
+import numpy as np
+import talib
+from typing import Dict, Optional, Tuple
+from dataclasses import dataclass
+
+@dataclass
+class BollingerBands:
+    upper: pd.Series
+    middle: pd.Series
+    lower: pd.Series
+    bandwidth: pd.Series
+    percent_b: pd.Series
+
+class TechnicalIndicators:
+    @staticmethod
+    def calculate_moving_averages(
+        data: pd.DataFrame,
+        windows: Tuple[int, ...] = (5, 10, 20, 50, 100, 200),
+        column: str = 'Close'
+    ) -> Dict[str, pd.Series]:
+        """
+        Calculate simple moving averages for given windows
+        
+        Args:
+            data: DataFrame containing stock data
+            windows: Tuple of window sizes to calculate
+            column: Column to calculate moving averages on
+            
+        Returns:
+            Dictionary of moving average series keyed by window size
+        """
+        return {f"SMA_{window}": data[column].rolling(window=window).mean() 
+                for window in windows}
+    
+    @staticmethod
+    def calculate_exponential_moving_averages(
+        data: pd.DataFrame,
+        windows: Tuple[int, ...] = (5, 10, 20, 50, 100, 200),
+        column: str = 'Close'
+    ) -> Dict[str, pd.Series]:
+        """
+        Calculate exponential moving averages for given windows
+        
+        Args:
+            data: DataFrame containing stock data
+            windows: Tuple of window sizes to calculate
+            column: Column to calculate EMAs on
+            
+        Returns:
+            Dictionary of EMA series keyed by window size
+        """
+        return {f"EMA_{window}": data[column].ewm(span=window, adjust=False).mean() 
+                for window in windows}
+    
+    @staticmethod
+    def calculate_rsi(
+        data: pd.DataFrame,
+        window: int = 14,
+        column: str = 'Close'
+    ) -> pd.Series:
+        """
+        Calculate Relative Strength Index (RSI)
+        
+        Args:
+            data: DataFrame containing stock data
+            window: Lookback window for RSI calculation
+            column: Column to calculate RSI on
+            
+        Returns:
+            RSI values as pandas Series
+        """
+        delta = data[column].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        rs = gain / loss
+        return 100 - (100 / (1 + rs))
+    
+    @staticmethod
+    def calculate_macd(
+        data: pd.DataFrame,
+        fast_period: int = 12,
+        slow_period: int = 26,
+        signal_period: int = 9,
+        column: str = 'Close'
+    ) -> Dict[str, pd.Series]:
+        """
+        Calculate MACD indicator
+        
+        Args:
+            data: DataFrame containing stock data
+            fast_period: Fast EMA period
+            slow_period: Slow EMA period
+            signal_period: Signal line period
+            column: Column to calculate MACD on
+            
+        Returns:
+            Dictionary containing MACD line, signal line, and histogram
+        """
+        macd_line = data[column].ewm(span=fast_period, adjust=False).mean() - \
+                   data[column].ewm(span=slow_period, adjust=False).mean()
+        signal_line = macd_line.ewm(span=signal_period, adjust=False).mean()
+        histogram = macd_line - signal_line
+        
+        return {
+            'macd_line': macd_line,
+            'signal_line': signal_line,
+            'histogram': histogram
+        }
+    
+    @staticmethod
+    def calculate_bollinger_bands(
+        data: pd.DataFrame,
+        window: int = 20,
+        num_std: float = 2.0,
+        column: str = 'Close'
+    ) -> BollingerBands:
+        """
+        Calculate Bollinger Bands
+        
+        Args:
+            data: DataFrame containing stock data
+            window: Moving average window
+            num_std: Number of standard deviations for bands
+            column: Column to calculate bands on
+            
+        Returns:
+            BollingerBands dataclass with upper, middle, lower bands and derived indicators
+        """
+        sma = data[column].rolling(window=window).mean()
+        rolling_std = data[column].rolling(window=window).std()
+        
+        upper = sma + (rolling_std * num_std)
+        lower = sma - (rolling_std * num_std)
+        bandwidth = (upper - lower) / sma
+        percent_b = (data[column] - lower) / (upper - lower)
+        
+        return BollingerBands(
+            upper=upper,
+            middle=sma,
+            lower=lower,
+            bandwidth=bandwidth,
+            percent_b=percent_b
+        )
+    
+    @staticmethod
+    def calculate_atr(
+        data: pd.DataFrame,
+        window: int = 14
+    ) -> pd.Series:
+        """
+        Calculate Average True Range (ATR)
+        
+        Args:
+            data: DataFrame containing OHLC data
+            window: Lookback window for ATR calculation
+            
+        Returns:
+            ATR values as pandas Series
+        """
+        high_low = data['High'] - data['Low']
+        high_close = (data['High'] - data['Close'].shift()).abs()
+        low_close = (data['Low'] - data['Close'].shift()).abs()
+        true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        return true_range.rolling(window=window).mean()
+    
+    @staticmethod
+    def calculate_obv(
+        data: pd.DataFrame,
+        price_col: str = 'Close',
+        volume_col: str = 'Volume'
+    ) -> pd.Series:
+        """
+        Calculate On-Balance Volume (OBV)
+        
+        Args:
+            data: DataFrame containing price and volume data
+            price_col: Column name for price data
+            volume_col: Column name for volume data
+            
+        Returns:
+            OBV values as pandas Series
+        """
+        price_diff = data[price_col].diff()
+        obv = (price_diff.apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0)) * data[volume_col]).cumsum()
+        return obv
+src/core/processing/fundamental_analysis.py
+python
+import pandas as pd
+from typing import Dict, Optional
+from dataclasses import dataclass
+
+@dataclass
+class ValuationMetrics:
+    pe_ratio: Optional[float]
+    pb_ratio: Optional[float]
+    ps_ratio: Optional[float]
+    ev_ebitda: Optional[float]
+    dividend_yield: Optional[float]
+
+@dataclass
+class ProfitabilityMetrics:
+    roe: Optional[float]
+    roa: Optional[float]
+    gross_margin: Optional[float]
+    operating_margin: Optional[float]
+    net_margin: Optional[float]
+
+@dataclass
+class LeverageMetrics:
+    debt_equity: Optional[float]
+    interest_coverage: Optional[float]
+    current_ratio: Optional[float]
+    quick_ratio: Optional[float]
+
+class FundamentalAnalyzer:
+    @staticmethod
+    def calculate_valuation_metrics(
+        price: float,
+        financials: Dict[str, float]
+    ) -> ValuationMetrics:
+        """
+        Calculate valuation metrics
+        
+        Args:
+            price: Current stock price
+            financials: Dictionary containing financial data
+            
+        Returns:
+            ValuationMetrics dataclass
+        """
+        eps = financials.get('eps')
+        book_value = financials.get('book_value')
+        sales = financials.get('sales')
+        ebitda = financials.get('ebitda')
+        enterprise_value = financials.get('enterprise_value')
+        dividend = financials.get('dividend')
+        
+        pe = price / eps if eps else None
+        pb = price / book_value if book_value else None
+        ps = price / sales if sales else None
+        ev_ebitda = enterprise_value / ebitda if ebitda and enterprise_value else None
+        div_yield = dividend / price if dividend else None
+        
+        return ValuationMetrics(
+            pe_ratio=pe,
+            pb_ratio=pb,
+            ps_ratio=ps,
+            ev_ebitda=ev_ebitda,
+            dividend_yield=div_yield
+        )
+    
+    @staticmethod
+    def calculate_profitability_metrics(
+        financials: Dict[str, float]
+    ) -> ProfitabilityMetrics:
+        """
+        Calculate profitability metrics
+        
+        Args:
+            financials: Dictionary containing financial data
+            
+        Returns:
+            ProfitabilityMetrics dataclass
+        """
+        net_income = financials.get('net_income')
+        total_assets = financials.get('total_assets')
+        shareholder_equity = financials.get('shareholder_equity')
+        revenue = financials.get('revenue')
+        gross_profit = financials.get('gross_profit')
+        operating_income = financials.get('operating_income')
+        
+        roe = net_income / shareholder_equity if net_income and shareholder_equity else None
+        roa = net_income / total_assets if net_income and total_assets else None
+        gross_margin = gross_profit / revenue if gross_profit and revenue else None
+        operating_margin = operating_income / revenue if operating_income and revenue else None
+        net_margin = net_income / revenue if net_income and revenue else None
+        
+        return ProfitabilityMetrics(
+            roe=roe,
+            roa=roa,
+            gross_margin=gross_margin,
+            operating_margin=operating_margin,
+            net_margin=net_margin
+        )
+    
+    @staticmethod
+    def calculate_leverage_metrics(
+        financials: Dict[str, float]
+    ) -> LeverageMetrics:
+        """
+        Calculate leverage and liquidity metrics
+        
+        Args:
+            financials: Dictionary containing financial data
+            
+        Returns:
+            LeverageMetrics dataclass
+        """
+        total_debt = financials.get('total_debt')
+        shareholder_equity = financials.get('shareholder_equity')
+        ebit = financials.get('ebit')
+        interest_expense = financials.get('interest_expense')
+        current_assets = financials.get('current_assets')
+        current_liabilities = financials.get('current_liabilities')
+        inventory = financials.get('inventory', 0)
+        
+        debt_equity = total_debt / shareholder_equity if total_debt and shareholder_equity else None
+        interest_coverage = ebit / interest_expense if ebit and interest_expense else None
+        current_ratio = current_assets / current_liabilities if current_assets and current_liabilities else None
+        quick_ratio = (current_assets - inventory) / current_liabilities if current_assets and current_liabilities else None
+        
+        return LeverageMetrics(
+            debt_equity=debt_equity,
+            interest_coverage=interest_coverage,
+            current_ratio=current_ratio,
+            quick_ratio=quick_ratio
+        )
+    
+    @staticmethod
+    def analyze_growth(
+        historical_financials: pd.DataFrame
+    ) -> Dict[str, float]:
+        """
+        Calculate growth rates from historical financials
+        
+        Args:
+            historical_financials: DataFrame with historical financial data
+            
+        Returns:
+            Dictionary of growth rates
+        """
+        growth_rates = {}
+        
+        # Revenue growth
+        if 'revenue' in historical_financials.columns:
+            growth_rates['revenue_growth'] = historical_financials['revenue'].pct_change().iloc[-1]
+        
+        # EPS growth
+        if 'eps' in historical_financials.columns:
+            growth_rates['eps_growth'] = historical_financials['eps'].pct_change().iloc[-1]
+        
+        # Free cash flow growth
+        if 'free_cash_flow' in historical_financials.columns:
+            growth_rates['fcf_growth'] = historical_financials['free_cash_flow'].pct_change().iloc[-1]
+        
+        return growth_rates
+src/core/processing/correlation.py
+python
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Optional
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+class CorrelationAnalyzer:
+    @staticmethod
+    def calculate_pairwise_correlation(
+        data: pd.DataFrame,
+        method: str = 'pearson',
+        min_periods: int = 30
+    ) -> pd.DataFrame:
+        """
+        Calculate pairwise correlation matrix for columns in DataFrame
+        
+        Args:
+            data: DataFrame with numeric columns
+            method: Correlation method ('pearson', 'kendall', 'spearman')
+            min_periods: Minimum number of observations required
+            
+        Returns:
+            Correlation matrix as DataFrame
+        """
+        return data.corr(method=method, min_periods=min_periods)
+    
+    @staticmethod
+    def calculate_rolling_correlation(
+        series1: pd.Series,
+        series2: pd.Series,
+        window: int = 30,
+        min_periods: int = 10
+    ) -> pd.Series:
+        """
+        Calculate rolling correlation between two series
+        
+        Args:
+            series1: First time series
+            series2: Second time series
+            window: Rolling window size
+            min_periods: Minimum number of observations required
+            
+        Returns:
+            Rolling correlation series
+        """
+        return series1.rolling(window=window, min_periods=min_periods).corr(series2)
+    
+    @staticmethod
+    def plot_correlation_heatmap(
+        corr_matrix: pd.DataFrame,
+        title: str = "Correlation Matrix",
+        figsize: tuple = (10, 8),
+        annot: bool = True,
+        cmap: str = "coolwarm",
+        vmin: float = -1,
+        vmax: float = 1
+    ) -> plt.Figure:
+        """
+        Plot correlation matrix as heatmap
+        
+        Args:
+            corr_matrix: Correlation matrix DataFrame
+            title: Plot title
+            figsize: Figure size
+            annot: Whether to annotate cells
+            cmap: Color map
+            vmin: Minimum value for color scale
+            vmax: Maximum value for color scale
+            
+        Returns:
+            Matplotlib Figure object
+        """
+        fig, ax = plt.subplots(figsize=figsize)
+        sns.heatmap(
+            corr_matrix,
+            annot=annot,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            ax=ax
+        )
+        ax.set_title(title)
+        plt.tight_layout()
+        return fig
+    
+    @staticmethod
+    def calculate_efficient_frontier(
+        returns: pd.DataFrame,
+        risk_free_rate: float = 0.0,
+        num_portfolios: int = 10000
+    ) -> Dict[str, np.ndarray]:
+        """
+        Calculate efficient frontier for portfolio optimization
+        
+        Args:
+            returns: DataFrame of asset returns (columns=assets, rows=time)
+            risk_free_rate: Risk-free rate for Sharpe ratio
+            num_portfolios: Number of random portfolios to generate
+            
+        Returns:
+            Dictionary containing:
+            - weights: Array of portfolio weights
+            - returns: Array of portfolio returns
+            - volatility: Array of portfolio volatilities
+            - sharpe: Array of Sharpe ratios
+        """
+        cov_matrix = returns.cov()
+        expected_returns = returns.mean()
+        num_assets = len(expected_returns)
+        
+        results = np.zeros((4 + num_assets, num_portfolios))
+        
+        for i in range(num_portfolios):
+            weights = np.random.random(num_assets)
+            weights /= np.sum(weights)
+            
+            portfolio_return = np.sum(expected_returns * weights)
+            portfolio_volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+            sharpe_ratio = (portfolio_return - risk_free_rate) / portfolio_volatility
+            
+            results[0, i] = portfolio_return
+            results[1, i] = portfolio_volatility
+            results[2, i] = sharpe_ratio
+            results[3, i] = sharpe_ratio  # For max Sharpe ratio tracking
+            results[4:4 + num_assets, i] = weights
+            
+        return {
+            'weights': results[4:4 + num_assets, :],
+            'returns': results[0, :],
+            'volatility': results[1, :],
+            'sharpe': results[2, :]
+        }
+4. Predictive Analytics Module
+src/core/analytics/prediction_models.py
+python
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.svm import SVR
+from sklearn.neural_network import MLPRegressor
+from sklearn.model_selection import train_test_split, TimeSeriesSplit
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.pipeline import Pipeline
+from sklearn.base import BaseEstimator, TransformerMixin
+from typing import Dict, Tuple, Optional, List
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+from config.settings import settings
+import joblib
+import os
+
+class FeatureEngineer(BaseEstimator, TransformerMixin):
+    """Feature engineering for stock prediction"""
+    def __init__(self, lookback: int = 10):
+        self.lookback = lookback
+        
+    def fit(self, X, y=None):
+        return self
+        
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Add technical features to data"""
+        if not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X)
+            
+        # Calculate returns
+        X['returns'] = X['Close'].pct_change()
+        
+        # Calculate moving averages
+        X['sma_10'] = X['Close'].rolling(window=10).mean()
+        X['sma_50'] = X['Close'].rolling(window=50).mean()
+        
+        # Calculate volatility
+        X['volatility'] = X['returns'].rolling(window=self.lookback).std()
+        
+        # Calculate RSI
+        delta = X['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        X['rsi'] = 100 - (100 / (1 + rs))
+        
+        # Calculate MACD
+        ema_12 = X['Close'].ewm(span=12, adjust=False).mean()
+        ema_26 = X['Close'].ewm(span=26, adjust=False).mean()
+        X['macd'] = ema_12 - ema_26
+        X['signal'] = X['macd'].ewm(span=9, adjust=False).mean()
+        X['histogram'] = X['macd'] - X['signal']
+        
+        # Lag features
+        for lag in range(1, self.lookback + 1):
+            X[f'lag_{lag}'] = X['Close'].shift(lag)
+            
+        return X.dropna()
+
+class StockPredictor:
+    """Base class for stock prediction models"""
+    def __init__(self, model_type: str = 'random_forest'):
+        self.model_type = model_type
+        self.scaler = MinMaxScaler()
+        self.model = self._init_model()
+        self.feature_engineer = FeatureEngineer()
+        
+    def _init_model(self):
+        """Initialize the prediction model"""
+        if self.model_type == 'random_forest':
+            return RandomForestRegressor(**settings.MODEL_PARAMS['random_forest'])
+        elif self.model_type == 'gradient_boosting':
+            return GradientBoostingRegressor()
+        elif self.model_type == 'svm':
+            return SVR()
+        elif self.model_type == 'mlp':
+            return MLPRegressor(hidden_layer_sizes=(100, 50))
+        else:
+            raise ValueError(f"Unknown model type: {self.model_type}")
+    
+    def prepare_data(
+        self, 
+        data: pd.DataFrame, 
+        target_col: str = 'Close',
+        test_size: float = 0.2,
+        shuffle: bool = False
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Prepare features and target for training"""
+        # Feature engineering
+        features = self.feature_engineer.transform(data)
+        
+        # Create target (next day's closing price)
+        target = features[target_col].shift(-1).dropna()
+        features = features.iloc[:-1]
+        
+        # Align features and target
+        features = features.loc[target.index]
+        
+        # Split into train/test
+        X_train, X_test, y_train, y_test = train_test_split(
+            features, target, test_size=test_size, shuffle=shuffle
+        )
+        
+        # Scale features
+        X_train_scaled = self.scaler.fit_transform(X_train)
+        X_test_scaled = self.scaler.transform(X_test)
+        
+        return X_train_scaled, X_test_scaled, y_train, y_test
+    
+    def train(self, X_train: np.ndarray, y_train: np.ndarray) -> None:
+        """Train the model"""
+        self.model.fit(X_train, y_train)
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Make predictions"""
+        return self.model.predict(X)
+    
+    def evaluate(
+        self, 
+        X_test: np.ndarray, 
+        y_test: np.ndarray
+    ) -> Dict[str, float]:
+        """Evaluate model performance"""
+        predictions = self.predict(X_test)
+        return {
+            'mse': mean_squared_error(y_test, predictions),
+            'mae': mean_absolute_error(y_test, predictions),
+            'r2': r2_score(y_test, predictions)
+        }
+    
+    def save_model(self, filepath: str) -> None:
+        """Save trained model to file"""
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        joblib.dump({
+            'model': self.model,
+            'scaler': self.scaler,
+            'feature_engineer': self.feature_engineer
+        }, filepath)
+    
+    @classmethod
+    def load_model(cls, filepath: str) -> 'StockPredictor':
+        """Load trained model from file"""
+        data = joblib.load(filepath)
+        predictor = cls()
+        predictor.model = data['model']
+        predictor.scaler = data['scaler']
+        predictor.feature_engineer = data['feature_engineer']
+        return predictor
+
+class LSTMPredictor:
+    """LSTM-based stock price predictor"""
+    def __init__(
+        self, 
+        lookback: int = 30,
+        units: int = 50,
+        dropout: float = 0.2,
+        epochs: int = 20,
+        batch_size: int = 32
+    ):
+        self.lookback = lookback
+        self.units = units
+        self.dropout = dropout
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.scaler = MinMaxScaler()
+        self.model = self._build_model()
+        
+    def _build_model(self) -> Sequential:
+        """Build LSTM model architecture"""
+        model = Sequential([
+            LSTM(self.units, return_sequences=True, input_shape=(self.lookback, 1)),
+            Dropout(self.dropout),
+            LSTM(self.units),
+            Dropout(self.dropout),
+            Dense(1)
+        ])
+        
+        model.compile(
+            optimizer=Adam(learning_rate=0.001),
+            loss='mean_squared_error'
+        )
+        
+        return model
+    
+    def create_sequences(
+        self, 
+        data: np.ndarray, 
+        target: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Create input sequences for LSTM"""
+        X, y = [], []
+        for i in range(len(data) - self.lookback):
+            X.append(data[i:i + self.lookback])
+            y.append(target[i + self.lookback])
+        return np.array(X), np.array(y)
+    
+    def prepare_data(
+        self, 
+        data: pd.DataFrame, 
+        target_col: str = 'Close',
+        test_size: float = 0.2
+    ) -> Tuple[Tuple[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray]]:
+        """Prepare data for LSTM training"""
+        # Scale the data
+        scaled_data = self.scaler.fit_transform(data[[target_col]])
+        
+        # Create sequences
+        X, y = self.create_sequences(scaled_data, scaled_data)
+        
+        # Split into train/test
+        split_idx = int(len(X) * (1 - test_size))
+        X_train, y_train = X[:split_idx], y[:split_idx]
+        X_test, y_test = X[split_idx:], y[split_idx:]
+        
+        return (X_train, y_train), (X_test, y_test)
+    
+    def train(
+        self, 
+        X_train: np.ndarray, 
+        y_train: np.ndarray,
+        validation_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+        verbose: int = 1
+    ) -> tf.keras.callbacks.History:
+        """Train the LSTM model"""
+        return self.model.fit(
+            X_train,
+            y_train,
+            epochs=self.epochs,
+            batch_size=self.batch_size,
+            validation_data=validation_data,
+            verbose=verbose
+        )
+    
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Make predictions and inverse transform to original scale"""
+        scaled_pred = self.model.predict(X)
+        return self.scaler.inverse_transform(scaled_pred)
+    
+    def evaluate(
+        self, 
+        X_test: np.ndarray, 
+        y_test: np.ndarray
+    ) -> Dict[str, float]:
+        """Evaluate model performance"""
+        predictions = self.predict(X_test)
+        y_test_inv = self.scaler.inverse_transform(y_test)
+        
+        return {
+            'mse': mean_squared_error(y_test_inv, predictions),
+            'mae': mean_absolute_error(y_test_inv, predictions),
+            'r2': r2_score(y_test_inv, predictions)
+        }
+    
+    def save_model(self, filepath: str) -> None:
+        """Save trained model to file"""
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        self.model.save(filepath)
+        joblib.dump(self.scaler, f"{filepath}_scaler.pkl")
+    
+    @classmethod
+    def load_model(cls, filepath: str) -> 'LSTMPredictor':
+        """Load trained model from file"""
+        predictor = cls()
+        predictor.model = tf.keras.models.load_model(filepath)
+        predictor.scaler = joblib.load(f"{filepath}_scaler.pkl")
+        return predictor
+src/core/analytics/time_series.py
+python
+import pandas as pd
+import numpy as np
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from fbprophet import Prophet
+from typing import Dict, Optional, Tuple
+import pmdarima as pm
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+import warnings
+warnings.filterwarnings("ignore")
+
+class TimeSeriesForecaster:
+    @staticmethod
+    def auto_arima(
+        series: pd.Series,
+        seasonal: bool = True,
+        m: int = 7,
+        max_p: int = 5,
+        max_q: int = 5,
+        max_d: int = 2,
+        test_size: float = 0.2,
+        verbose: bool = False
+    ) -> Tuple[Dict, float, float]:
+        """
+        Automatically select and fit ARIMA model
+        
+        Args:
+            series: Time series data
+            seasonal: Whether to consider seasonal components
+            m: Seasonal period
+            max_p: Max AR order
+            max_q: Max MA order
+            max_d: Max differencing order
+            test_size: Proportion for test set
+            verbose: Whether to show model selection output
+            
+        Returns:
+            Tuple containing:
+            - model parameters
+            - test RMSE
+            - test MAE
+        """
+        # Split data
+        split_idx = int(len(series) * (1 - test_size))
+        train, test = series.iloc[:split_idx], series.iloc[split_idx:]
+        
+        # Auto ARIMA
+        model = pm.auto_arima(
+            train,
+            seasonal=seasonal,
+            m=m,
+            max_p=max_p,
+            max_q=max_q,
+            max_d=max_d,
+            suppress_warnings=True,
+            stepwise=True,
+            trace=verbose
+        )
+        
+        # Forecast
+        forecast = model.predict(n_periods=len(test))
+        
+        # Evaluate
+        rmse = np.sqrt(mean_squared_error(test, forecast))
+        mae = mean_absolute_error(test, forecast)
+        
+        return model.get_params(), rmse, mae
+    
+    @staticmethod
+    def fit_prophet(
+        series: pd.Series,
+        seasonality: Dict[str, bool] = None,
+        changepoint_prior_scale: float = 0.05,
+        test_size: float = 0.2,
+        freq: str = 'D'
+    ) -> Tuple[Prophet, float, float]:
+        """
+        Fit Facebook Prophet model to time series
+        
+        Args:
+            series: Time series data
+            seasonality: Dictionary of seasonality settings
+            changepoint_prior_scale: Model flexibility parameter
+            test_size: Proportion for test set
+            freq: Data frequency
+            
+        Returns:
+            Tuple containing:
+            - fitted model
+            - test RMSE
+            - test MAE
+        """
+        if seasonality is None:
+            seasonality = {
+                'daily': False,
+                'weekly': True,
+                'yearly': True
+            }
+        
+        # Prepare DataFrame for Prophet
+        df = series.reset_index()
+        df.columns = ['ds', 'y']
+        
+        # Split data
+        split_idx = int(len(df) * (1 - test_size))
+        train, test = df.iloc[:split_idx], df.iloc[split_idx:]
+        
+        # Fit model
+        model = Prophet(
+            changepoint_prior_scale=changepoint_prior_scale,
+            daily_seasonality=seasonality['daily'],
+            weekly_seasonality=seasonality['weekly'],
+            yearly_seasonality=seasonality['yearly']
+        )
+        model.fit(train)
+        
+        # Make forecast
+        future = model.make_future_dataframe(periods=len(test), freq=freq)
+        forecast = model.predict(future)
+        
+        # Merge with actuals
+        results = forecast.set_index('ds')[['yhat', 'yhat_lower', 'yhat_upper']].join(
+            df.set_index('ds')
+        )
+        results = results.iloc[split_idx:]
+        
+        # Evaluate
+        rmse = np.sqrt(mean_squared_error(results['y'], results['yhat']))
+        mae = mean_absolute_error(results['y'], results['yhat'])
+        
+        return model, rmse, mae
+    
+    @staticmethod
+    def rolling_forecast(
+        series: pd.Series,
+        model_func,
+        window: int = 30,
+        test_size: float = 0.2,
+        **model_kwargs
+    ) -> Tuple[pd.Series, Dict[str, float]]:
+        """
+        Perform rolling window forecast
+        
+        Args:
+            series: Time series data
+            model_func: Function that returns a forecasting model
+            window: Rolling window size
+            test_size: Proportion for test set
+            **model_kwargs: Additional arguments for model_func
+            
+        Returns:
+            Tuple containing:
+            - forecasted values
+            - evaluation metrics
+        """
+        split_idx = int(len(series) * (1 - test_size))
+        train, test = series.iloc[:split_idx], series.iloc[split_idx:]
+        
+        predictions = []
+        
+        for i in range(len(test) - window + 1):
+            # Get window of data
+            history = pd.concat([train, test.iloc[:i]])
+            
+            # Fit model
+            model = model_func(history, **model_kwargs)
+            
+            # Forecast next step
+            pred = model.forecast(steps=1)
+            predictions.append(pred[0])
+        
+        # Create predictions series
+        pred_series = pd.Series(
+            predictions,
+            index=test.index[window - 1:],
+            name='predictions'
+        )
+        
+        # Calculate metrics
+        actuals = test.iloc[window - 1:]
+        metrics = {
+            'rmse': np.sqrt(mean_squared_error(actuals, pred_series)),
+            'mae': mean_absolute_error(actuals, pred_series),
+            'mape': np.mean(np.abs((actuals - pred_series) / actuals)) * 100
+        }
+        
+        return pred_series, metrics
+src/core/analytics/volatility.py
+python
+import numpy as np
+import pandas as pd
+from typing import Dict, Optional
+from arch import arch_model
+from scipy.stats import norm
+from statsmodels.tsa.statespace.tools import cfa
+
+class VolatilityModeler:
+    @staticmethod
+    def garch_model(
+        returns: pd.Series,
+        p: int = 1,
+        q: int = 1,
+        dist: str = 'normal',
+        mean: str = 'constant',
+        vol: str = 'GARCH',
+        test_size: float = 0.2
+    ) -> Dict:
+        """
+        Fit GARCH model to returns series
+        
+        Args:
+            returns: Series of asset returns
+            p: Lag order of the symmetric innovation
+            q: Lag order of lagged volatility
+            dist: Error distribution ('normal', 't', 'skewt')
+            mean: Mean model ('constant', 'zero', 'AR', 'LS')
+            vol: Volatility model ('GARCH', 'EGARCH', 'ARCH')
+            test_size: Proportion for test set
+            
+        Returns:
+            Dictionary containing:
+            - fitted model
+            - test predictions
+            - evaluation metrics
+        """
+        # Split data
+        split_idx = int(len(returns) * (1 - test_size))
+        train, test = returns.iloc[:split_idx], returns.iloc[split_idx:]
+        
+        # Fit model
+        model = arch_model(
+            train,
+            p=p,
+            q=q,
+            dist=dist,
+            mean=mean,
+            vol=vol
+        )
+        fitted = model.fit(disp='off')
+        
+        # Forecast
+        forecasts = fitted.forecast(start=split_idx)
+        conditional_vol = forecasts.variance.iloc[-1] ** 0.5
+        
+        # Calculate VaR
+        alpha = 0.05
+        if dist == 'normal':
+            var = -norm.ppf(alpha) * conditional_vol
+        else:
+            var = -fitted.distribution.ppf(alpha, fitted.params[-1:]) * conditional_vol
+        
+        return {
+            'model': fitted,
+            'conditional_volatility': conditional_vol,
+            'value_at_risk': var,
+            'params': fitted.params,
+            'aic': fitted.aic,
+            'bic': fitted.bic
+        }
+    
+    @staticmethod
+    def rolling_volatility(
+        returns: pd.Series,
+        window: int = 21,
+        min_periods: int = 10
+    ) -> pd.Series:
+        """
+        Calculate rolling volatility (standard deviation)
+        
+        Args:
+            returns: Series of asset returns
+            window: Rolling window size
+            min_periods: Minimum number of observations
+            
+        Returns:
+            Rolling volatility series
+        """
+        return returns.rolling(window=window, min_periods=min_periods).std()
+    
+    @staticmethod
+    def exponential_weighted_volatility(
+        returns: pd.Series,
+        span: int = 60,
+        min_periods: int = 10
+    ) -> pd.Series:
+        """
+        Calculate exponentially weighted moving volatility
+        
+        Args:
+            returns: Series of asset returns
+            span: Decay factor (alpha = 2/(span+1))
+            min_periods: Minimum number of observations
+            
+        Returns:
+            EWMA volatility series
+        """
+        return returns.ewm(span=span, min_periods=min_periods).std()
+    
+    @staticmethod
+    def parkinson_estimator(
+        high: pd.Series,
+        low: pd.Series,
+        window: int = 21,
+        min_periods: int = 10
+    ) -> pd.Series:
+        """
+        Calculate Parkinson volatility estimator using high-low range
+        
+        Args:
+            high: Series of high prices
+            low: Series of low prices
+            window: Rolling window size
+            min_periods: Minimum number of observations
+            
+        Returns:
+            Parkinson volatility estimate series
+        """
+        log_hl = np.log(high / low)
+        return (log_hl ** 2).rolling(window=window, min_periods=min_periods).mean() ** 0.5 / (4 * np.log(2)) ** 0.5
+    
+    @staticmethod
+    def garman_klass_estimator(
+        open: pd.Series,
+        high: pd.Series,
+        low: pd.Series,
+        close: pd.Series,
+        window: int = 21,
+        min_periods: int = 10
+    ) -> pd.Series:
+        """
+        Calculate Garman-Klass volatility estimator
+        
+        Args:
+            open: Series of open prices
+            high: Series of high prices
+            low: Series of low prices
+            close: Series of close prices
+            window: Rolling window size
+            min_periods: Minimum number of observations
+            
+        Returns:
+            Garman-Klass volatility estimate series
+        """
+        log_hl = np.log(high / low)
+        log_co = np.log(close / open)
+        return (0.5 * log_hl ** 2 - (2 * np.log(2) - 1) * log_co ** 2).rolling(
+            window=window, min_periods=min_periods
+        ).mean() ** 0.5
+5. Visualization Module
+src/core/visualization/charts.py
+python
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import pandas as pd
+from typing import Dict, Optional, List
+import numpy as np
+from core.processing.technical_indicators import TechnicalIndicators
+
+class StockVisualizer:
+    @staticmethod
+    def plot_candlestick(
+        data: pd.DataFrame,
+        title: str = "Stock Price",
+        show_volume: bool = True,
+        show_rsi: bool = True,
+        show_macd: bool = True,
+        height: int = 800,
+        width: int = 1200
+    ) -> go.Figure:
+        """
+        Create interactive candlestick chart with optional technical indicators
+        
+        Args:
+            data: DataFrame with OHLC data
+            title: Chart title
+            show_volume: Whether to show volume subplot
+            show_rsi: Whether to show RSI subplot
+            show_macd: Whether to show MACD subplot
+            height: Chart height
+            width: Chart width
+            
+        Returns:
+            Plotly Figure object
+        """
+        # Determine subplots based on options
+        rows = 1
+        specs = [[{"secondary_y": True}]]
+        row_heights = [0.7]
+        
+        if show_volume:
+            rows += 1
+            specs.append([{"secondary_y": False}])
+            row_heights.append(0.15)
+            
+        if show_rsi:
+            rows += 1
+            specs.append([{"secondary_y": False}])
+            row_heights.append(0.15)
+            
+        if show_macd:
+            rows += 1
+            specs.append([{"secondary_y": False}])
+            row_heights.append(0.15)
+            
+        # Create figure with subplots
+        fig = make_subplots(
+            rows=rows, 
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.03,
+            row_heights=row_heights,
+            specs=specs
+        )
+        
+        # Candlestick chart (main plot)
+        fig.add_trace(
+            go.Candlestick(
+                x=data.index,
+                open=data['Open'],
+                high=data['High'],
+                low=data['Low'],
+                close=data['Close'],
+                name="Price",
+                increasing_line_color='green',
+                decreasing_line_color='red'
+            ),
+            row=1, col=1, secondary_y=False
+        )
+        
+        # Add moving averages
+        ma_colors = ['blue', 'orange', 'purple']
+        for i, window in enumerate([20, 50, 200]):
+            if f'SMA_{window}' in data.columns:
+                fig.add_trace(
+                    go.Scatter(
+                        x=data.index,
+                        y=data[f'SMA_{window}'],
+                        name=f"SMA {window}",
+                        line=dict(color=ma_colors[i], width=1)
+                    ),
+                    row=1, col=1, secondary_y=False
+                )
+        
+        # Volume
+        if show_volume and 'Volume' in data.columns:
+            fig.add_trace(
+                go.Bar(
+                    x=data.index,
+                    y=data['Volume'],
+                    name="Volume",
+                    marker_color='rgba(100, 102, 255, 0.4)'
+                ),
+                row=2 if show_volume else 1, col=1, secondary_y=False
+            )
+        
+        # RSI
+        if show_rsi:
+            rsi = TechnicalIndicators.calculate_rsi(data) if 'RSI' not in data.columns else data['RSI']
+            fig.add_trace(
+                go.Scatter(
+                    x=data.index,
+                    y=rsi,
+                    name="RSI",
+                    line=dict(color='purple', width=1)
+                ),
+                row=3 if show_volume and show_rsi else (2 if show_volume or show_rsi else 1), 
+                col=1, 
+                secondary_y=False
+            )
+            # Add overbought/oversold lines
+            fig.add_hline(
+                y=70, 
+                line_dash="dot", 
+                line_color="red", 
+                annotation_text="Overbought", 
+                row=3 if show_volume and show_rsi else (2 if show_volume or show_rsi else 1), 
+                col=1
+            )
+            fig.add_hline(
+                y=30, 
+                line_dash="dot", 
+                line_color="green", 
+                annotation_text="Oversold", 
+                row=3 if show_volume and show_rsi else (2 if show_volume or show_rsi else 1), 
+                col=1
+            )
+        
+        # MACD
+        if show_macd and 'Close' in data.columns:
+            macd_data = TechnicalIndicators.calculate_macd(data) if 'MACD' not in data.columns else {
+                'macd_line': data['MACD'],
+                'signal_line': data['Signal'],
+                'histogram': data['Histogram']
+            }
+            
+            row_num = 1
+            if show_volume and show_rsi and show_macd:
+                row_num = 4
+            elif (show_volume and show_rsi) or (show_volume and show_macd) or (show_rsi and show_macd):
+                row_num = 3
+            elif show_volume or show_rsi or show_macd:
+                row_num = 2
+            
+            # MACD Line
+            fig.add_trace(
+                go.Scatter(
+                    x=data.index,
+                    y=macd_data['macd_line'],
+                    name="MACD",
+                    line=dict(color='blue', width=1)
+                ),
+                row=row_num, col=1, secondary_y=False
+            )
+            
+            # Signal Line
+            fig.add_trace(
+                go.Scatter(
+                    x=data.index,
+                    y=macd_data['signal_line'],
+                    name="Signal",
+                    line=dict(color='orange', width=1)
+                ),
+                row=row_num, col=1, secondary_y=False
+            )
+            
+            # Histogram
+            colors = ['green' if val >= 0 else 'red' for val in macd_data['histogram']]
+            fig.add_trace(
+                go.Bar(
+                    x=data.index,
+                    y=macd_data['histogram'],
+                    name="Histogram",
+                    marker_color=colors,
+                    opacity=0.5
+                ),
+                row=row_num, col=1, secondary_y=False
+            )
+        
+        # Update layout
+        fig.update_layout(
+            title=title,
+            height=height,
+            width=width,
+            showlegend=True,
+            xaxis_rangeslider_visible=False,
+            hovermode="x unified"
+        )
+        
+        return fig
+    
+    @staticmethod
+    def plot_correlation_heatmap(
+        corr_matrix: pd.DataFrame,
+        title: str = "Correlation Matrix",
+        height: int = 600,
+        width: int = 800
+    ) -> go.Figure:
+        """
+        Create interactive correlation heatmap
+        
+        Args:
+            corr_matrix: Correlation matrix DataFrame
+            title: Chart title
+            height: Chart height
+            width: Chart width
+            
+        Returns:
+            Plotly Figure object
+        """
+        fig = go.Figure(
+            data=go.Heatmap(
+                z=corr_matrix.values,
+                x=corr_matrix.columns,
+                y=corr_matrix.index,
+                colorscale='RdBu',
+                zmin=-1,
+                zmax=1,
+                colorbar=dict(title="Correlation")
+            )
+        )
+        
+        fig.update_layout(
+            title=title,
+            height=height,
+            width=width,
+            xaxis_title="",
+            yaxis_title="",
+            xaxis_showgrid=False,
+            yaxis_showgrid=False,
+            yaxis_autorange='reversed'
+        )
+        
+        return fig
+    
+    @staticmethod
+    def plot_portfolio_allocation(
+        allocations: Dict[str, float],
+        title: str = "Portfolio Allocation",
+        height: int = 500,
+        width: int = 700
+    ) -> go.Figure:
+        """
+        Create pie chart of portfolio allocations
+        
+        Args:
+            allocations: Dictionary of {asset: allocation} pairs
+            title: Chart title
+            height: Chart height
+            width: Chart width
+            
+        Returns:
+            Plotly Figure object
+        """
+        labels = list(allocations.keys())
+        values = list(allocations.values())
+        
+        fig = go.Figure(
+            data=[go.Pie(
+                labels=labels,
+                values=values,
+                textinfo='label+percent',
+                insidetextorientation='radial'
+            )]
+        )
+        
+        fig.update_layout(
+            title=title,
+            height=height,
+            width=width,
+            showlegend=False
+        )
+        
+        return fig
+    
+    @staticmethod
+    def plot_efficient_frontier(
+        returns: np.ndarray,
+        volatility: np.ndarray,
+        sharpe: np.ndarray,
+        title: str = "Efficient Frontier",
+        height: int = 600,
+        width: int = 800
+    ) -> go.Figure:
+        """
+        Create efficient frontier plot
+        
+        Args:
+            returns: Array of portfolio returns
+            volatility: Array of portfolio volatilities
+            sharpe: Array of Sharpe ratios
+            title: Chart title
+            height: Chart height
+            width: Chart width
+            
+        Returns:
+            Plotly Figure object
+        """
+        fig = go.Figure()
+        
+        # Add all portfolios
+        fig.add_trace(
+            go.Scatter(
+                x=volatility,
+                y=returns,
+                mode='markers',
+                marker=dict(
+                    size=8,
+                    color=sharpe,
+                    colorscale='Viridis',
+                    showscale=True,
+                    colorbar=dict(title="Sharpe Ratio")
+                ),
+                name="Portfolios",
+                hovertemplate="Volatility: %{x:.2f}<br>Return: %{y:.2f}<br>Sharpe: %{marker.color:.2f}"
+            )
+        )
+        
+        # Highlight max Sharpe portfolio
+        max_sharpe_idx = np.argmax(sharpe)
+        fig.add_trace(
+            go.Scatter(
+                x=[volatility[max_sharpe_idx]],
+                y=[returns[max_sharpe_idx]],
+                mode='markers',
+                marker=dict(
+                    size=12,
+                    color='red',
+                    symbol='star'
+                ),
+                name="Max Sharpe Ratio"
+            )
+        )
+        
+        fig.update_layout(
+            title=title,
+            height=height,
+            width=width,
+            xaxis_title="Volatility (Standard Deviation)",
+            yaxis_title="Expected Return",
+            hovermode="closest"
+        )
+        
+        return fig
+6. Recommendation System
+src/core/recommendation/scoring.py
+python
+from dataclasses import dataclass
+from typing import Dict, Optional
+import numpy as np
+from config.settings import settings
+
+@dataclass
+class FactorWeights:
+    momentum: float = 0.3
+    value: float = 0.25
+    growth: float = 0.2
+    quality: float = 0.15
+    risk: float = 0.1
+
+@dataclass
+class StockScore:
+    momentum: float
+    value: float
+    growth: float
+    quality: float
+    risk: float
+    total: float
+
+class StockScorer:
+    def __init__(self, weights: FactorWeights = None):
+        self.weights = weights or FactorWeights(**settings.RECOMMENDATION_WEIGHTS)
+    
+    def calculate_score(self, stock_data: Dict[str, float]) -> StockScore:
+        """Calculate composite score based on multiple factors"""
+        scores = StockScore(
+            momentum=self._calculate_momentum_score(
+                stock_data.get('3m_return'),
+                stock_data.get('6m_return'),
+                stock_data.get('12m_return'),
+                stock_data.get('rsi'),
+                stock_data.get('macd_signal')
+            ),
+            value=self._calculate_value_score(
+                stock_data.get('pe_ratio'),
+                stock_data.get('pb_ratio'),
+                stock_data.get('ps_ratio'),
+                stock_data.get('dividend_yield'),
+                stock_data.get('ev_ebitda')
+            ),
+            growth=self._calculate_growth_score(
+                stock_data.get('revenue_growth'),
+                stock_data.get('eps_growth'),
+                stock_data.get('fcf_growth'),
+                stock_data.get('roe_growth'),
+                stock_data.get('book_value_growth')
+            ),
+            quality=self._calculate_quality_score(
+                stock_data.get('roe'),
+                stock_data.get('roa'),
+                stock_data.get('debt_equity'),
+                stock_data.get('current_ratio'),
+                stock_data.get('interest_coverage')
+            ),
+            risk=self._calculate_risk_score(
+                stock_data.get('beta'),
+                stock_data.get('volatility'),
+                stock_data.get('max_drawdown'),
+                stock_data.get('var_95')
+            ),
+            total=0.0
+        )
+        
+        # Calculate weighted total score
+        scores.total = (
+            scores.momentum * self.weights.momentum +
+            scores.value * self.weights.value +
+            scores.growth * self.weights.growth +
+            scores.quality * self.weights.quality +
+            scores.risk * self.weights.risk
+        )
+        
+        return scores
+    
+    def _calculate_momentum_score(
+        self,
+        return_3m: Optional[float],
+        return_6m: Optional[float],
+        return_12m: Optional[float],
+        rsi: Optional[float],
+        macd_signal: Optional[float]
+    ) -> float:
+        """Calculate momentum sub-score (0-100)"""
+        score = 0.0
+        
+        # Returns contribution (60% weight)
+        if all(v is not None for v in [return_3m, return_6m, return_12m]):
+            # Scale returns to 0-60 range
+            avg_return = (return_3m * 0.4 + return_6m * 0.3 + return_12m * 0.3) * 100
+            returns_score = min(max(avg_return * 10, 0), 60)  # Cap at 60
+            score += returns_score
+        
+        # RSI contribution (20% weight)
+        if rsi is not None:
+            # Ideal RSI is between 40-60
+            rsi_score = 20 - abs(rsi - 50) / 50 * 20
+            score += max(rsi_score, 0)
+        
+        # MACD signal contribution (20% weight)
+        if macd_signal is not None:
+            # Positive MACD signal is good
+            macd_score = 20 if macd_signal > 0 else 0
+            score += macd_score
+            
+        return min(score, 100)
+    
+    def _calculate_value_score(
+        self,
+        pe: Optional[float],
+        pb: Optional[float],
+        ps: Optional[float],
+        div_yield: Optional[float],
+        ev_ebitda: Optional[float]
+    ) -> float:
+        """Calculate value sub-score (0-100)"""
+        score = 0.0
+        valid_metrics = 0
+        
+        # PE ratio (max 25 points)
+        if pe is not None and pe > 0:
+            # Lower PE is better
+            pe_score = max(25 - (pe / 40 * 25), 0)  # PE > 40 gets 0
+            score += pe_score
+            valid_metrics += 1
+        
+        # PB ratio (max 20 points)
+        if pb is not None and pb > 0:
+            pb_score = max(20 - (pb / 6 * 20), 0)  # PB > 6 gets 0
+            score += pb_score
+            valid_metrics += 1
+        
+        # PS ratio (max 15 points)
+        if ps is not None and ps > 0:
+            ps_score = max(15 - (ps / 10 * 15), 0)  # PS > 10 gets 0
+            score += ps_score
+            valid_metrics += 1
+        
+        # Dividend yield (max 20 points)
+        if div_yield is not None and div_yield > 0:
+            dy_score = min(div_yield * 1000, 20)  # 2% yield = 20 points
+            score += dy_score
+            valid_metrics += 1
+        
+        # EV/EBITDA (max 20 points)
+        if ev_ebitda is not None and ev_ebitda > 0:
+            ev_score = max(20 - (ev_ebitda / 20 * 20), 0)  # EV/EBITDA > 20 gets 0
+            score += ev_score
+            valid_metrics += 1
+        
+        # Normalize if not all metrics are available
+        if valid_metrics < 5:
+            score = score * (5 / valid_metrics) if valid_metrics > 0 else 0
+            
+        return min(score, 100)
+    
+    def _calculate_growth_score(
+        self,
+        revenue_growth: Optional[float],
+        eps_growth: Optional[float],
+        fcf_growth: Optional[float],
+        roe_growth: Optional[float],
+        book_value_growth: Optional[float]
+    ) -> float:
+        """Calculate growth sub-score (0-100)"""
+        score = 0.0
+        valid_metrics = 0
+        
+        # Revenue growth (max 30 points)
+        if revenue_growth is not None:
+            rg_score = min(max(revenue_growth * 100 * 3, 0), 30)  # 10% growth = 30 points
+            score += rg_score
+            valid_metrics += 1
+        
+        # EPS growth (max 30 points)
+        if eps_growth is not None:
+            eg_score = min(max(eps_growth * 100 * 3, 0), 30)  # 10% growth = 30 points
+            score += eg_score
+            valid_metrics += 1
+        
+        # FCF growth (max 20 points)
+        if fcf_growth is not None:
+            fcf_score = min(max(fcf_growth * 100 * 2, 0), 20)  # 10% growth = 20 points
+            score += fcf_score
+            valid_metrics += 1
+        
+        # ROE growth (max 10 points)
+        if roe_growth is not None:
+            roe_score = min(max(roe_growth * 100, 0), 10)  # 10% growth = 10 points
+            score += roe_score
+            valid_metrics += 1
+        
+        # Book value growth (max 10 points)
+        if book_value_growth is not None:
+            bv_score = min(max(book_value_growth * 100, 0), 10)  # 10% growth = 10 points
+            score += bv_score
+            valid_metrics += 1
+        
+        # Normalize if not all metrics are available
+        if valid_metrics < 5:
+            score = score * (5 / valid_metrics) if valid_metrics > 0 else 0
+            
+        return min(score, 100)
+    
+    def _calculate_quality_score(
+        self,
+        roe: Optional[float],
+        roa: Optional[float],
+        debt_equity: Optional[float],
+        current_ratio: Optional[float],
+        interest_coverage: Optional[float]
+    ) -> float:
+        """Calculate quality sub-score (0-100)"""
+        score = 0.0
+        valid_metrics = 0
+        
+        # ROE (max 25 points)
+        if roe is not None:
+            roe_score = min(max(roe * 10, 0), 25)  # 15% ROE = 15 points
+            score += roe_score
+            valid_metrics += 1
+        
+        # ROA (max 20 points)
+        if roa is not None:
+            roa_score = min(max(roa * 20, 0), 20)  # 5% ROA = 10 points
+            score += roa_score
+            valid_metrics += 1
+        
+        # Debt/Equity (max 20 points)
+        if debt_equity is not None:
+            de_score = max(20 - (debt_equity * 10), 0)  # D/E > 2 gets 0
+            score += de_score
+            valid_metrics += 1
+        
+        # Current ratio (max 15 points)
+        if current_ratio is not None:
+            cr_score = min(max(current_ratio * 5, 0), 15)  # CR > 3 gets 15
+            score += cr_score
+            valid_metrics += 1
+        
+        # Interest coverage (max 20 points)
+        if interest_coverage is not None:
+            ic_score = min(max(interest_coverage / 5 * 20, 0), 20)  # IC > 5 gets 20
+            score += ic_score
+            valid_metrics += 1
+        
+        # Normalize if not all metrics are available
+        if valid_metrics < 5:
+            score = score * (5 / valid_metrics) if valid_metrics > 0 else 0
+            
+        return min(score, 100)
+    
+    def _calculate_risk_score(
+        self,
+        beta: Optional[float],
+        volatility: Optional[float],
+        max_drawdown: Optional[float],
+        var_95: Optional[float]
+    ) -> float:
+        """Calculate risk sub-score (higher is better, 0-100)"""
+        score = 100.0  # Start with max and deduct for risk
+        
+        # Beta (max deduction 20 points)
+        if beta is not None:
+            beta_deduction = min(max(abs(beta - 1) * 10, 20)  # Beta 0 or 2: 10, Beta 3: 20
+            score -= beta_deduction
+        
+        # Volatility (max deduction 30 points)
+        if volatility is not None:
+            vol_deduction = min(volatility * 100 * 1.5, 30)  # 20% vol = 30
+            score -= vol_deduction
+        
+        # Max drawdown (max deduction 30 points)
+        if max_drawdown is not None:
+            mdd_deduction = min(abs(max_drawdown) * 100 * 1.5, 30)  # -20% MDD = 30
+            score -= mdd_deduction
+        
+        # VaR (max deduction 20 points)
+        if var_95 is not None:
+            var_deduction = min(abs(var_95) * 100 * 2, 20)  # -10% VaR = 20
+            score -= var_deduction
+            
+        return max(score, 0)
+    
+    def generate_recommendation(self, score: float) -> str:
+        """Generate recommendation based on total score"""
+        if score >= 80:
+            return "Strong Buy"
+        elif score >= 65:
+            return "Buy"
+        elif score >= 50:
+            return "Hold"
+        elif score >= 35:
+            return "Sell"
+        else:
+            return "Strong Sell"
+src/core/recommendation/portfolio.py
+python
+import numpy as np
+import pandas as pd
+from typing import Dict, List, Optional
+from dataclasses import dataclass
+from pypfopt import EfficientFrontier
+from pypfopt import risk_models
+from pypfopt import expected_returns
+from pypfopt import objective_functions
+from pypfopt import plotting
+
+@dataclass
+class PortfolioAllocation:
+    tickers: List[str]
+    weights: np.ndarray
+    expected_return: float
+    expected_volatility: float
+    sharpe_ratio: float
+
+class PortfolioOptimizer:
+    @staticmethod
+    def mean_variance_optimization(
+        returns: pd.DataFrame,
+        risk_free_rate: float = 0.02,
+        target_return: Optional[float] = None,
+        target_risk: Optional[float] = None,
+        weight_bounds: Tuple[float, float] = (0, 1),
+        gamma: float = 0.5
+    ) -> PortfolioAllocation:
+        """
+        Perform mean-variance portfolio optimization
+        
+        Args:
+            returns: DataFrame of asset returns (columns=assets, rows=time)
+            risk_free_rate: Risk-free rate for Sharpe ratio
+            target_return: Optional target return constraint
+            target_risk: Optional target risk constraint
+            weight_bounds: Minimum and maximum weight bounds
+            gamma: L2 regularization parameter
+            
+        Returns:
+            PortfolioAllocation object with optimization results
+        """
+        # Calculate expected returns and sample covariance
+        mu = expected_returns.mean_historical_return(returns)
+        S = risk_models.sample_cov(returns)
+        
+        # Set up optimizer
+        ef = EfficientFrontier(mu, S, weight_bounds=weight_bounds)
+        ef.add_objective(objective_functions.L2_reg, gamma=gamma)
+        
+        # Add constraints if specified
+        if target_return is not None:
+            ef.efficient_return(target_return)
+        elif target_risk is not None:
+            ef.efficient_risk(target_risk)
+        else:
+            ef.max_sharpe(risk_free_rate=risk_free_rate)
+        
+        # Get clean weights
+        weights = ef.clean_weights()
+        
+        # Convert to numpy array in original order
+        ordered_weights = np.array([weights[ticker] for ticker in returns.columns])
+        
+        # Calculate performance
+        expected_return, expected_volatility, sharpe_ratio = ef.portfolio_performance(
+            risk_free_rate=risk_free_rate
+        )
+        
+        return PortfolioAllocation(
+            tickers=list(returns.columns),
+            weights=ordered_weights,
+            expected_return=expected_return,
+            expected_volatility=expected_volatility,
+            sharpe_ratio=sharpe_ratio
+        )
+    
+    @staticmethod
+    def hierarchical_risk_parity(
+        returns: pd.DataFrame,
+        risk_free_rate: float = 0.02,
+        weight_bounds: Tuple[float, float] = (0, 1)
+    ) -> PortfolioAllocation:
+        """
+        Perform hierarchical risk parity portfolio optimization
+        
+        Args:
+            returns: DataFrame of asset returns (columns=assets, rows=time)
+            risk_free_rate: Risk-free rate for Sharpe ratio
+            weight_bounds: Minimum and maximum weight bounds
+            
+        Returns:
+            PortfolioAllocation object with optimization results
+        """
+        from pypfopt import HRPOpt
+        
+        # Set up HRP optimizer
+        hrp = HRPOpt(returns)
+        hrp.set_weight_bounds(weight_bounds)
+        weights = hrp.optimize()
+        
+        # Convert to numpy array in original order
+        ordered_weights = np.array([weights[ticker] for ticker in returns.columns])
+        
+        # Calculate performance
+        cov = returns.cov()
+        portfolio_return = np.sum(hrp.expected_returns * ordered_weights)
+        portfolio_volatility = np.sqrt(np.dot(ordered_weights.T, np.dot(cov, ordered_weights)))
+        sharpe_ratio = (portfolio_return - risk_free_rate) / portfolio_volatility
+        
+        return PortfolioAllocation(
+            tickers=list(returns.columns),
+            weights=ordered_weights,
+            expected_return=portfolio_return,
+            expected_volatility=portfolio_volatility,
+            sharpe_ratio=sharpe_ratio
+        )
+    
+    @staticmethod
+    def minimum_volatility(
+        returns: pd.DataFrame,
+        risk_free_rate: float = 0.02,
+        weight_bounds: Tuple[float, float] = (0, 1),
+        gamma: float = 0.5
+    ) -> PortfolioAllocation:
+        """
+        Perform minimum volatility portfolio optimization
+        
+        Args:
+            returns: DataFrame of asset returns (columns=assets, rows=time)
+            risk_free_rate: Risk-free rate for Sharpe ratio
+            weight_bounds: Minimum and maximum weight bounds
+            gamma: L2 regularization parameter
+            
+        Returns:
+            PortfolioAllocation object with optimization results
+        """
+        # Calculate expected returns and sample covariance
+        mu = expected_returns.mean_historical_return(returns)
+        S = risk_models.sample_cov(returns)
+        
+        # Set up optimizer
+        ef = EfficientFrontier(None, S, weight_bounds=weight_bounds)
+        ef.add_objective(objective_functions.L2_reg, gamma=gamma)
+        ef.min_volatility()
+        
+        # Get clean weights
+        weights = ef.clean_weights()
+        
+        # Convert to numpy array in original order
+        ordered_weights = np.array([weights[ticker] for ticker in returns.columns])
+        
+        # Calculate performance
+        expected_return = np.sum(mu * ordered_weights)
+        expected_volatility = np.sqrt(np.dot(ordered_weights.T, np.dot(S, ordered_weights)))
+        sharpe_ratio = (expected_return - risk_free_rate) / expected_volatility
+        
+        return PortfolioAllocation(
+            tickers=list(returns.columns),
+            weights=ordered_weights,
+            expected_return=expected_return,
+            expected_volatility=expected_volatility,
+            sharpe_ratio=sharpe_ratio
+        )
+    
+    @staticmethod
+    def equal_weighted_portfolio(tickers: List[str]) -> PortfolioAllocation:
+        """
+        Create equal-weighted portfolio
+        
+        Args:
+            tickers: List of asset tickers
+            
+        Returns:
+            PortfolioAllocation with equal weights
+        """
+        n = len(tickers)
+        weights = np.ones(n) / n
+        
+        return PortfolioAllocation(
+            tickers=tickers,
+            weights=weights,
+            expected_return=None,
+            expected_volatility=None,
+            sharpe_ratio=None
+        )
+    
+    @staticmethod
+    def plot_efficient_frontier(
+        returns: pd.DataFrame,
+        risk_free_rate: float = 0.02,
+        show_assets: bool = True,
+        filename: Optional[str] = None
+    ) -> None:
+        """
+        Plot the efficient frontier
+        
+        Args:
+            returns: DataFrame of asset returns
+            risk_free_rate: Risk-free rate for Sharpe ratio
+            show_assets: Whether to show individual assets
+            filename: Optional filename to save plot
+        """
+        # Calculate expected returns and covariance
+        mu = expected_returns.mean_historical_return(returns)
+        S = risk_models.sample_cov(returns)
+        
+        # Create efficient frontier
+        ef = EfficientFrontier(mu, S)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        plotting.plot_efficient_frontier(
+            ef, 
+            ax=ax, 
+            show_assets=show_assets,
+            risk_free_rate=risk_free_rate
+        )
+        
+        if filename:
+            plt.savefig(filename)
+        else:
+            plt.show()
+7. Portfolio Management Module
+src/core/portfolio/tracker.py
+python
+import pandas as pd
+from typing import Dict, List, Optional
+from dataclasses import dataclass
+from datetime import datetime
+import numpy as np
+
+@dataclass
+class Transaction:
+    date: datetime
+    ticker: str
+    type: str  # 'buy' or 'sell'
+    quantity: float
+    price: float
+    commission: float = 0.0
+    notes: Optional[str] = None
+
+@dataclass
+class Holding:
+    ticker: str
+    quantity: float
+    avg_cost: float
+    current_price: float
+    current_value: float
+    unrealized_pnl: float
+    unrealized_pnl_pct: float
+
+@dataclass
+class PortfolioPerformance:
+    total_value: float
+    total_cost: float
+    unrealized_pnl: float
+    unrealized_pnl_pct: float
+    daily_return: Optional[float]
+    annualized_return: Optional[float]
+    volatility: Optional[float]
+    sharpe_ratio: Optional[float]
+    max_drawdown: Optional[float]
+
+class PortfolioTracker:
+    def __init__(self):
+        self.transactions: List[Transaction] = []
+        self.cash_balance: float = 0.0
+        self.performance_history: Dict[datetime, PortfolioPerformance] = {}
+    
+    def add_transaction(self, transaction: Transaction) -> None:
+        """Add a transaction to the portfolio"""
+        self.transactions.append(transaction)
+        
+        # Update cash balance
+        if transaction.type == 'buy':
+            self.cash_balance -= (transaction.quantity * transaction.price + transaction.commission)
+        else:  # sell
+            self.cash_balance += (transaction.quantity * transaction.price - transaction.commission)
+    
+    def get_holdings(self, prices: Dict[str, float]) -> Dict[str, Holding]:
+        """Get current holdings with current prices"""
+        holdings = {}
+        
+        for ticker in set(txn.ticker for txn in self.transactions):
+            # Filter transactions for this ticker
+            txn_history = [txn for txn in self.transactions if txn.ticker == ticker]
+            
+            # Calculate position
+            quantity = 0.0
+            total_cost = 0.0
+            
+            for txn in txn_history:
+                if txn.type == 'buy':
+                    quantity += txn.quantity
+                    total_cost += txn.quantity * txn.price + txn.commission
+                else:  # sell
+                    quantity -= txn.quantity
+                    # For FIFO accounting, we'd need more complex logic
+                    total_cost -= txn.quantity * (total_cost / quantity)  # Approximate
+            
+            if quantity > 0:
+                avg_cost = total_cost / quantity
+                current_price = prices.get(ticker, 0.0)
+                current_value = quantity * current_price
+                unrealized_pnl = current_value - total_cost
+                unrealized_pnl_pct = (unrealized_pnl / total_cost) * 100 if total_cost > 0 else 0.0
+                
+                holdings[ticker] = Holding(
+                    ticker=ticker,
+                    quantity=quantity,
+                    avg_cost=avg_cost,
+                    current_price=current_price,
+                    current_value=current_value,
+                    unrealized_pnl=unrealized_pnl,
+                    unrealized_pnl_pct=unrealized_pnl_pct
+                )
+        
+        return holdings
+    
+    def get_portfolio_performance(
+        self,
+        prices: Dict[str, float],
+        risk_free_rate: float = 0.02,
+        lookback_days: int = 252
+    ) -> PortfolioPerformance:
+        """Calculate portfolio performance metrics"""
+        holdings = self.get_holdings(prices)
+        total_value = sum(h.current_value for h in holdings.values()) + self.cash_balance
+        total_cost = sum(h.quantity * h.avg_cost for h in holdings.values())
+        unrealized_pnl = total_value - total_cost
+        unrealized_pnl_pct = (unrealized_pnl / total_cost) * 100 if total_cost > 0 else 0.0
+        
+        # Calculate returns and risk metrics if we have history
+        daily_return = None
+        annualized_return = None
+        volatility = None
+        sharpe_ratio = None
+        max_drawdown = None
+        
+        if len(self.performance_history) >= 2:
+            # Get daily returns from performance history
+            history_df = pd.DataFrame.from_dict(
+                self.performance_history, 
+                orient='index',
+                columns=['total_value']
+            )
+            history_df = history_df.sort_index()
+            history_df['daily_return'] = history_df['total_value'].pct_change()
+            
+            # Calculate metrics
+            daily_return = history_df['daily_return'].iloc[-1]
+            
+            if len(history_df) > lookback_days:
+                lookback_returns = history_df['daily_return'].iloc[-lookback_days:]
+                annualized_return = (1 + lookback_returns.mean()) ** 252 - 1
+                volatility = lookback_returns.std() * np.sqrt(252)
+                sharpe_ratio = (annualized_return - risk_free_rate) / volatility if volatility > 0 else 0
+                
+                # Calculate max drawdown
+                cumulative = (1 + lookback_returns).cumprod()
+                peak = cumulative.expanding(min_periods=1).max()
+                drawdown = (cumulative - peak) / peak
+                max_drawdown = drawdown.min()
+        
+        # Record current performance
+        current_perf = PortfolioPerformance(
+            total_value=total_value,
+            total_cost=total_cost,
+            unrealized_pnl=unrealized_pnl,
+            unrealized_pnl_pct=unrealized_pnl_pct,
+            daily_return=daily_return,
+            annualized_return=annualized_return,
+            volatility=volatility,
+            sharpe_ratio=sharpe_ratio,
+            max_drawdown=max_drawdown
+        )
+        
+        self.performance_history[datetime.now()] = current_perf
+        return current_perf
+    
+    def get_tax_lots(self) -> Dict[str, List[Dict]]:
+        """Get tax lot information (FIFO basis)"""
+        tax_lots = {}
+        
+        for ticker in set(txn.ticker for txn in self.transactions):
+            # Filter transactions for this ticker
+            txn_history = [txn for txn in self.transactions if txn.ticker == ticker]
+            
+            # Sort by date
+            txn_history.sort(key=lambda x: x.date)
+            
+            lots = []
+            current_lot = None
+            
+            for txn in txn_history:
+                if txn.type == 'buy':
+                    if current_lot is None or current_lot['remaining'] == 0:
+                        current_lot = {
+                            'date': txn.date,
+                            'quantity': txn.quantity,
+                            'cost': txn.quantity * txn.price + txn.commission,
+                            'remaining': txn.quantity,
+                            'price': txn.price
+                        }
+                        lots.append(current_lot)
+                    else:
+                        current_lot['quantity'] += txn.quantity
+                        current_lot['cost'] += txn.quantity * txn.price + txn.commission
+                        current_lot['remaining'] += txn.quantity
+                else:  # sell
+                    remaining_sell = txn.quantity
+                    
+                    for lot in lots:
+                        if lot['remaining'] == 0:
+                            continue
+                            
+                        sell_from_lot = min(remaining_sell, lot['remaining'])
+                        lot['remaining'] -= sell_from_lot
+                        remaining_sell -= sell_from_lot
+                        
+                        if remaining_sell == 0:
+                            break
+            
+            # Only keep lots with remaining quantity
+            tax_lots[ticker] = [lot for lot in lots if lot['remaining'] > 0]
+        
+        return tax_lots
+    
+    def get_dividend_history(self) -> List[Dict]:
+        """Get dividend history (placeholder for actual implementation)"""
+        # In a real implementation, you would track dividend payments
+        return []
+src/core/portfolio/risk.py
+python
+import numpy as np
+import pandas as pd
+from typing import Dict, Optional
+from dataclasses import dataclass
+
+@dataclass
+class RiskMetrics:
+    value_at_risk_95: float
+    expected_shortfall_95: float
+    beta: float
+    alpha: float
+    tracking_error: float
+    information_ratio: float
+
+class PortfolioRiskAnalyzer:
+    @staticmethod
+    def calculate_risk_metrics(
+        portfolio_returns: pd.Series,
+        benchmark_returns: Optional[pd.Series] = None,
+        risk_free_rate: float = 0.02,
+        lookback: int = 252
+    ) -> RiskMetrics:
+        """
+        Calculate portfolio risk metrics
+        
+        Args:
+            portfolio_returns: Series of portfolio returns
+            benchmark_returns: Series of benchmark returns (optional)
+            risk_free_rate: Annual risk-free rate
+            lookback: Number of days to look back
+            
+        Returns:
+            RiskMetrics object with calculated metrics
+        """
+        # Ensure we have enough data
+        if len(portfolio_returns) < lookback:
+            lookback = len(portfolio_returns)
+        
+        recent_returns = portfolio_returns.iloc[-lookback:]
+        
+        # Value at Risk (95%)
+        var_95 = np.percentile(recent_returns, 5)
+        
+        # Expected Shortfall (95%)
+        es_95 = recent_returns[recent_returns <= var_95].mean()
+        
+        # Beta and Alpha (if benchmark provided)
+        beta = None
+        alpha = None
+        tracking_error = None
+        info_ratio = None
+        
+        if benchmark_returns is not None and len(benchmark_returns) >= lookback:
+            benchmark_recent = benchmark_returns.iloc[-lookback:]
+            
+            # Calculate covariance and variance
+            cov_matrix = np.cov(recent_returns, benchmark_recent)
+            beta = cov_matrix[0, 1] / cov_matrix[1, 1]
+            
+            # Annualize returns for alpha calculation
+            port_annual_return = (1 + recent_returns.mean()) ** 252 - 1
+            bench_annual_return = (1 + benchmark_recent.mean()) ** 252 - 1
+            
+            alpha = port_annual_return - (risk_free_rate + beta * (bench_annual_return - risk_free_rate))
+            
+            # Tracking error and information ratio
+            active_returns = recent_returns - benchmark_recent
+            tracking_error = active_returns.std() * np.sqrt(252)
+            info_ratio = active_returns.mean() / active_returns.std() * np.sqrt(252) if active_returns.std() > 0 else 0
+        
+        return RiskMetrics(
+            value_at_risk_95=var_95,
+            expected_shortfall_95=es_95,
+            beta=beta,
+            alpha=alpha,
+            tracking_error=tracking_error,
+            information_ratio=info_ratio
+        )
+    
+    @staticmethod
+    def stress_test(
+        portfolio_returns: pd.Series,
+        stress_periods: Dict[str, Tuple[str, str]],
+        normal_period: Tuple[str, str] = None
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Perform stress test on portfolio returns
+        
+        Args:
+            portfolio_returns: Series of portfolio returns with datetime index
+            stress_periods: Dictionary of {period_name: (start_date, end_date)}
+            normal_period: Optional normal period for comparison
+            
+        Returns:
+            Dictionary of {period_name: metrics_dict}
+        """
+        results = {}
+        
+        # Calculate normal period metrics if provided
+        normal_metrics = None
+        if normal_period:
+            normal_start, normal_end = normal_period
+            normal_returns = portfolio_returns.loc[normal_start:normal_end]
+            normal_metrics = {
+                'mean_return': normal_returns.mean(),
+                'volatility': normal_returns.std(),
+                'max_drawdown': PortfolioRiskAnalyzer.calculate_max_drawdown(normal_returns)
+            }
+        
+        # Calculate stress period metrics
+        for period_name, (start_date, end_date) in stress_periods.items():
+            stress_returns = portfolio_returns.loc[start_date:end_date]
+            
+            if len(stress_returns) == 0:
+                continue
+                
+            metrics = {
+                'mean_return': stress_returns.mean(),
+                'volatility': stress_returns.std(),
+                'max_drawdown': PortfolioRiskAnalyzer.calculate_max_drawdown(stress_returns)
+            }
+            
+            # Compare to normal period if available
+            if normal_metrics:
+                metrics['return_vs_normal'] = metrics['mean_return'] - normal_metrics['mean_return']
+                metrics['volatility_ratio'] = metrics['volatility'] / normal_metrics['volatility']
+                metrics['max_drawdown_diff'] = metrics['max_drawdown'] - normal_metrics['max_drawdown']
+            
+            results[period_name] = metrics
+        
+        return results
+    
+    @staticmethod
+    def calculate_max_drawdown(returns: pd.Series) -> float:
+        """Calculate maximum drawdown from return series"""
+        cumulative = (1 + returns).cumprod()
+        peak = cumulative.expanding(min_periods=1).max()
+        drawdown = (cumulative - peak) / peak
+        return drawdown.min()
+    
+    @staticmethod
+    def calculate_risk_contribution(
+        weights: np.ndarray,
+        covariance_matrix: np.ndarray
+    ) -> np.ndarray:
+        """
+        Calculate risk contribution of each asset
+        
+        Args:
+            weights: Portfolio weights vector
+            covariance_matrix: Asset covariance matrix
+            
+        Returns:
+            Array of risk contributions
+        """
+        portfolio_volatility = np.sqrt(np.dot(weights.T, np.dot(covariance_matrix, weights)))
+        marginal_risk = np.dot(covariance_matrix, weights) / portfolio_volatility
+        risk_contribution = weights * marginal_risk
+        return risk_contribution / portfolio_volatility  # As percentage
+    
+    @staticmethod
+    def calculate_diversification_ratio(
+        weights: np.ndarray,
+        covariance_matrix: np.ndarray,
+        volatilities: np.ndarray
+    ) -> float:
+        """
+        Calculate diversification ratio
+        
+        Args:
+            weights: Portfolio weights vector
+            covariance_matrix: Asset covariance matrix
+            volatilities: Individual asset volatilities
+            
+        Returns:
+            Diversification ratio
+        """
+        weighted_vol = np.sum(weights * volatilities)
+        portfolio_vol = np.sqrt(np.dot(weights.T, np.dot(covariance_matrix, weights)))
+        return weighted_vol / portfolio_vol if portfolio_vol > 0 else 0
+8. Web Dashboard
+src/web/dashboard.py
+python
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
+from core.data.collectors.yahoo_finance import YahooFinanceCollector
+from core.processing.technical_indicators import TechnicalIndicators
+from core.visualization.charts import StockVisualizer
+from core.recommendation.scoring import StockScorer
+from core.portfolio.tracker import PortfolioTracker, Transaction
+from core.portfolio.risk import PortfolioRiskAnalyzer
+from core.recommendation.portfolio import PortfolioOptimizer
+
+# Page configuration
+st.set_page_config(
+    page_title="Stock Analysis Tool",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Initialize session state
+if 'portfolio' not in st.session_state:
+    st.session_state.portfolio = PortfolioTracker()
+    st.session_state.portfolio.cash_balance = 100000  # Starting cash
+
+# Sidebar - Main controls
+st.sidebar.header("Stock Analysis Settings")
+ticker = st.sidebar.text_input("Enter Stock Ticker", "AAPL")
+period = st.sidebar.selectbox("Time Period", ["1mo", "3mo", "6mo", "1y", "5y", "Max"])
+interval = st.sidebar.selectbox("Interval", ["1d", "1wk", "1mo"], index=0)
+
+# Fetch data
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def get_stock_data(ticker: str, period: str, interval: str) -> pd.DataFrame:
+    collector = YahooFinanceCollector(ticker)
+    data = collector.get_historical_data(period=period, interval=interval)
+    
+    # Calculate technical indicators
+    tech = TechnicalIndicators()
+    data = pd.concat([
+        data,
+        tech.calculate_moving_averages(data),
+        tech.calculate_exponential_moving_averages(data),
+        pd.Series(tech.calculate_rsi(data), name='RSI'),
+        pd.DataFrame(tech.calculate_macd(data))
+    ], axis=1)
+    
+    return data
+
+try:
+    data = get_stock_data(ticker, period, interval)
+    fundamentals = YahooFinanceCollector(ticker).get_fundamentals()
+    current_price = data['Close'].iloc[-1]
+    
+    # Main dashboard
+    st.title(f"{ticker} Stock Analysis")
+    
+    # Layout columns
+    col1, col2, col3 = st.columns(3)
+    
+    # Key metrics
+    col1.metric("Current Price", f"${current_price:.2f}")
+    col2.metric("52 Week High", f"${fundamentals.get('52_week_high', 'N/A')}")
+    col3.metric("52 Week Low", f"${fundamentals.get('52_week_low', 'N/A')}")
+    
+    # Tabs
+    tab1, tab2, tab3, tab4 = st.tabs(["Technical Analysis", "Fundamental Analysis", "Portfolio", "Recommendation"])
+    
+    with tab1:
+        # Technical Analysis Tab
+        st.header("Technical Analysis")
+        
+        # Chart settings
+        show_volume = st.checkbox("Show Volume", True)
+        show_rsi = st.checkbox("Show RSI", True)
+        show_macd = st.checkbox("Show MACD", True)
+        
+        # Display chart
+        fig = StockVisualizer.plot_candlestick(
+            data,
+            title=f"{ticker} Price Chart",
+            show_volume=show_volume,
+            show_rsi=show_rsi,
+            show_macd=show_macd
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Technical indicators summary
+        st.subheader("Technical Indicators Summary")
+        
+        # Calculate recent values
+        last_rsi = data['RSI'].iloc[-1]
+        macd_signal = data['histogram'].iloc[-1] > 0
+        sma_20 = data['SMA_20'].iloc[-1]
+        sma_50 = data['SMA_50'].iloc[-1]
+        sma_200 = data['SMA_200'].iloc[-1] if 'SMA_200' in data.columns else None
+        
+        # Display indicators
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("RSI (14)", f"{last_rsi:.1f}", 
+                   "Overbought" if last_rsi > 70 else "Oversold" if last_rsi < 30 else "Neutral")
+        col2.metric("MACD", "Bullish" if macd_signal else "Bearish")
+        col3.metric("SMA 20 vs Price", 
+                    "Above" if current_price > sma_20 else "Below", 
+                    f"{abs(current_price - sma_20):.2f}")
+        if sma_200:
+            col4.metric("SMA 50 vs 200", 
+                        "Golden Cross" if sma_50 > sma_200 else "Death Cross", 
+                        f"{abs(sma_50 - sma_200):.2f}")
+    
+    with tab2:
+        # Fundamental Analysis Tab
+        st.header("Fundamental Analysis")
+        
+        # Valuation metrics
+        st.subheader("Valuation Metrics")
+        val_col1, val_col2, val_col3, val_col4 = st.columns(4)
+        val_col1.metric("P/E Ratio", f"{fundamentals.get('pe_ratio', 'N/A')}")
+        val_col2.metric("P/B Ratio", f"{fundamentals.get('pb_ratio', 'N/A')}")
+        val_col3.metric("Dividend Yield", 
+                       f"{fundamentals.get('dividend_yield', 0) * 100:.2f}%" if fundamentals.get('dividend_yield') else "N/A")
+        val_col4.metric("Market Cap", 
+                       f"${fundamentals.get('market_cap', 0)/1e9:.2f}B" if fundamentals.get('market_cap') else "N/A")
+        
+        # Profitability metrics
+        st.subheader("Profitability Metrics")
+        prof_col1, prof_col2, prof_col3 = st.columns(3)
+        prof_col1.metric("ROE", f"{fundamentals.get('roe', 'N/A')}")
+        prof_col2.metric("ROA", f"{fundamentals.get('roa', 'N/A')}")
+        prof_col3.metric("Profit Margin", f"{fundamentals.get('profit_margin', 'N/A')}")
+        
+        # Growth metrics
+        st.subheader("Growth Metrics")
+        growth_col1, growth_col2 = st.columns(2)
+        growth_col1.metric("Revenue Growth", f"{fundamentals.get('revenue_growth', 'N/A')}")
+        growth_col2.metric("EPS Growth", f"{fundamentals.get('eps_growth', 'N/A')}")
+        
+        # Company information
+        st.subheader("Company Information")
+        st.write(f"**Sector:** {fundamentals.get('sector', 'N/A')}")
+        st.write(f"**Industry:** {fundamentals.get('industry', 'N/A')}")
+        st.write(f"**Company:** {fundamentals.get('company_name', 'N/A')}")
+    
+    with tab3:
+        # Portfolio Tab
+        st.header("Portfolio Management")
+        
+        # Portfolio transactions
+        st.subheader("Add Transaction")
+        with st.form("transaction_form"):
+            col1, col2, col3 = st.columns(3)
+            trans_type = col1.selectbox("Type", ["Buy", "Sell"])
+            trans_quantity = col2.number_input("Quantity", min_value=1, value=100)
+            trans_price = col3.number_input("Price", min_value=0.01, value=current_price, step=0.01)
+            
+            col4, col5 = st.columns(2)
+            trans_date = col4.date_input("Date", datetime.now())
+            trans_commission = col5.number_input("Commission", min_value=0.0, value=0.0, step=0.01)
+            
+            submitted = st.form_submit_button("Add Transaction")
+            
+            if submitted:
+                transaction = Transaction(
+                    date=datetime.combine(trans_date, datetime.min.time()),
+                    ticker=ticker,
+                    type=trans_type.lower(),
+                    quantity=trans_quantity,
+                    price=trans_price,
+                    commission=trans_commission
+                )
+                st.session_state.portfolio.add_transaction(transaction)
+                st.success("Transaction added successfully!")
+        
+        # Current holdings
+        st.subheader("Current Holdings")
+        holdings = st.session_state.portfolio.get_holdings({ticker: current_price})
+        
+        if holdings:
+            holdings_df = pd.DataFrame([vars(h) for h in holdings.values()])
+            st.dataframe(holdings_df.style.format({
+                'current_price': '${:.2f}',
+                'current_value': '${:,.2f}',
+                'unrealized_pnl': '${:,.2f}',
+                'unrealized_pnl_pct': '{:.2f}%'
+            }))
+            
+            # Portfolio performance
+            perf = st.session_state.portfolio.get_portfolio_performance({ticker: current_price})
+            
+            st.metric("Portfolio Value", f"${perf.total_value:,.2f}", 
+                     f"{perf.unrealized_pnl:,.2f} ({perf.unrealized_pnl_pct:.2f}%)")
+            
+            # Risk metrics
+            st.subheader("Risk Metrics")
+            if perf.volatility and perf.sharpe_ratio and perf.max_drawdown:
+                risk_col1, risk_col2, risk_col3 = st.columns(3)
+                risk_col1.metric("Annualized Volatility", f"{perf.volatility:.2%}")
+                risk_col2.metric("Sharpe Ratio", f"{perf.sharpe_ratio:.2f}")
+                risk_col3.metric("Max Drawdown", f"{perf.max_drawdown:.2%}")
+        else:
+            st.info("No holdings in portfolio")
+    
+    with tab4:
+        # Recommendation Tab
+        st.header("Investment Recommendation")
+        
+        # Calculate score
+        scorer = StockScorer()
+        score_data = {
+            '3m_return': data['Close'].pct_change(63).iloc[-1],
+            '6m_return': data['Close'].pct_change(126).iloc[-1],
+            '12m_return': data['Close'].pct_change(252).iloc[-1] if len(data) > 252 else None,
+            'rsi': data['RSI'].iloc[-1],
+            'macd_signal': data['histogram'].iloc[-1] > 0,
+            'pe_ratio': fundamentals.get('pe_ratio'),
+            'pb_ratio': fundamentals.get('pb_ratio'),
+            'ps_ratio': fundamentals.get('ps_ratio'),
+            'dividend_yield': fundamentals.get('dividend_yield'),
+            'ev_ebitda': fundamentals.get('ev_ebitda'),
+            'revenue_growth': fundamentals.get('revenue_growth'),
+            'eps_growth': fundamentals.get('eps_growth'),
+            'fcf_growth': fundamentals.get('fcf_growth'),
+            'roe': fundamentals.get('roe'),
+            'roa': fundamentals.get('roa'),
+            'debt_equity': fundamentals.get('debt_equity'),
+            'current_ratio': fundamentals.get('current_ratio'),
+            'interest_coverage': fundamentals.get('interest_coverage'),
+            'beta': fundamentals.get('beta'),
+            'volatility': data['Close'].pct_change().std() * np.sqrt(252),
+            'max_drawdown': PortfolioRiskAnalyzer.calculate_max_drawdown(data['Close'].pct_change())
+        }
+        
+        # Filter out None values
+        score_data = {k: v for k, v in score_data.items() if v is not None}
+        
+        score = scorer.calculate_score(score_data)
+        recommendation = scorer.generate_recommendation(score.total)
+        
+        # Display recommendation
+        st.subheader("Recommendation")
+        
+        # Color based on recommendation
+        if recommendation in ["Strong Buy", "Buy"]:
+            color = "green"
+        elif recommendation == "Hold":
+            color = "orange"
+        else:
+            color = "red"
+        
+        st.markdown(f"<h2 style='text-align: center; color: {color};'>{recommendation}</h2>", 
+                   unsafe_allow_html=True)
+        
+        # Score breakdown
+        st.subheader("Score Breakdown")
+        
+        score_col1, score_col2 = st.columns(2)
+        
+        with score_col1:
+            st.metric("Total Score", f"{score.total:.1f}/100")
+            
+        with score_col2:
+            st.metric("Rating", recommendation)
+        
+        # Score components
+        st.write("**Momentum:** ", f"{score.momentum:.1f}/100")
+        st.progress(score.momentum/100)
+        
+        st.write("**Value:** ", f"{score.value:.1f}/100")
+        st.progress(score.value/100)
+        
+        st.write("**Growth:** ", f"{score.growth:.1f}/100")
+        st.progress(score.growth/100)
+        
+        st.write("**Quality:** ", f"{score.quality:.1f}/100")
+        st.progress(score.quality/100)
+        
+        st.write("**Risk:** ", f"{score.risk:.1f}/100")
+        st.progress(score.risk/100)
+
+except Exception as e:
+    st.error(f"Error fetching data for {ticker}: {str(e)}")
+9. API Module
+src/api/endpoints.py
+python
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Optional, List, Dict
+from datetime import date
+from core.data.collectors.yahoo_finance import YahooFinanceCollector
+from core.processing.technical_indicators import TechnicalIndicators
+from core.recommendation.scoring import StockScorer
+import pandas as pd
+
+app = FastAPI(
+    title="Stock Analysis API",
+    description="API for stock market analysis and recommendations",
+    version="1.0.0"
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Request models
+class StockRequest(BaseModel):
+    ticker: str
+    period: str = "1y"
+    interval: str = "1d"
+
+class PortfolioRequest(BaseModel):
+    tickers: List[str]
+    weights: Optional[List[float]] = None
+
+class RecommendationRequest(StockRequest):
+    pass
+
+# Response models
+class StockResponse(BaseModel):
+    ticker: str
+    current_price: float
+    data: Dict[str, List[float]]
+    indicators: Dict[str, float]
+
+class RecommendationResponse(BaseModel):
+    ticker: str
+    score: float
+    recommendation: str
+    components: Dict[str, float]
+
+class PortfolioResponse(BaseModel):
+    tickers: List[str]
+    weights: List[float]
+    expected_return: float
+    expected_volatility: float
+    sharpe_ratio: float
+
+# Endpoints
+@app.get("/")
+def read_root():
+    return {"message": "Stock Analysis API"}
+
+@app.post("/stock", response_model=StockResponse)
+def get_stock_data(request: StockRequest):
+    try:
+        collector = YahooFinanceCollector(request.ticker)
+        data = collector.get_historical_data(period=request.period, interval=request.interval)
+        
+        # Calculate technical indicators
+        tech = TechnicalIndicators()
+        rsi = tech.calculate_rsi(data)
+        macd = tech.calculate_macd(data)
+        
+        # Prepare response
+        response_data = {
+            "date": data.index.strftime("%Y-%m-%d").tolist(),
+            "open": data["Open"].tolist(),
+            "high": data["High"].tolist(),
+            "low": data["Low"].tolist(),
+            "close": data["Close"].tolist(),
+            "volume": data["Volume"].tolist()
+        }
+        
+        indicators = {
+            "current_price": data["Close"].iloc[-1],
+            "rsi": rsi.iloc[-1],
+            "macd": macd["macd_line"].iloc[-1],
+            "signal": macd["signal_line"].iloc[-1],
+            "histogram": macd["histogram"].iloc[-1]
+        }
+        
+        return StockResponse(
+            ticker=request.ticker,
+            current_price=data["Close"].iloc[-1],
+            data=response_data,
+            indicators=indicators
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/recommendation", response_model=RecommendationResponse)
+def get_recommendation(request: RecommendationRequest):
+    try:
+        collector = YahooFinanceCollector(request.ticker)
+        data = collector.get_historical_data(period=request.period, interval=request.interval)
+        fundamentals = collector.get_fundamentals()
+        
+        # Calculate score
+        scorer = StockScorer()
+        score_data = {
+            '3m_return': data['Close'].pct_change(63).iloc[-1],
+            '6m_return': data['Close'].pct_change(126).iloc[-1],
+            '12m_return': data['Close'].pct_change(252).iloc[-1] if len(data) > 252 else None,
+            'rsi': TechnicalIndicators.calculate_rsi(data).iloc[-1],
+            'macd_signal': TechnicalIndicators.calculate_macd(data)['histogram'].iloc[-1] > 0,
+            'pe_ratio': fundamentals.get('pe_ratio'),
+            'pb_ratio': fundamentals.get('pb_ratio'),
+            'ps_ratio': fundamentals.get('ps_ratio'),
+            'dividend_yield': fundamentals.get('dividend_yield'),
+            'ev_ebitda': fundamentals.get('ev_ebitda'),
+            'revenue_growth': fundamentals.get('revenue_growth'),
+            'eps_growth': fundamentals.get('eps_growth'),
+            'fcf_growth': fundamentals.get('fcf_growth'),
+            'roe': fundamentals.get('roe'),
+            'roa': fundamentals.get('roa'),
+            'debt_equity': fundamentals.get('debt_equity'),
+            'current_ratio': fundamentals.get('current_ratio'),
+            'interest_coverage': fundamentals.get('interest_coverage'),
+            'beta': fundamentals.get('beta'),
+            'volatility': data['Close'].pct_change().std() * np.sqrt(252),
+            'max_drawdown': PortfolioRiskAnalyzer.calculate_max_drawdown(data['Close'].pct_change())
+        }
+        
+        # Filter out None values
+        score_data = {k: v for k, v in score_data.items() if v is not None}
+        
+        score = scorer.calculate_score(score_data)
+        recommendation = scorer.generate_recommendation(score.total)
+        
+        return RecommendationResponse(
+            ticker=request.ticker,
+            score=score.total,
+            recommendation=recommendation,
+            components={
+                'momentum': score.momentum,
+                'value': score.value,
+                'growth': score.growth,
+                'quality': score.quality,
+                'risk': score.risk
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/portfolio/optimize", response_model=PortfolioResponse)
+def optimize_portfolio(request: PortfolioRequest):
+    try:
+        # Get historical returns for all tickers
+        returns = []
+        valid_tickers = []
+        
+        for ticker in request.tickers:
+            try:
+                collector = YahooFinanceCollector(ticker)
+                data = collector.get_historical_data(period="1y", interval="1d")
+                returns.append(data['Close'].pct_change().dropna())
+                valid_tickers.append(ticker)
+            except:
+                continue
+        
+        if not valid_tickers:
+            raise HTTPException(status_code=400, detail="No valid tickers provided")
+        
+        # Create returns DataFrame
+        returns_df = pd.concat(returns, axis=1)
+        returns_df.columns = valid_tickers
+        
+        # Run optimization
+        optimizer = PortfolioOptimizer()
+        allocation = optimizer.mean_variance_optimization(returns_df)
+        
+        return PortfolioResponse(
+            tickers=allocation.tickers,
+            weights=allocation.weights.tolist(),
+            expected_return=allocation.expected_return,
+            expected_volatility=allocation.expected_volatility,
+            sharpe_ratio=allocation.sharpe_ratio
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+src/api/schemas.py
+python
+from pydantic import BaseModel
+from typing import Optional, List, Dict
+from datetime import date
+
+class StockData(BaseModel):
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+class TechnicalIndicators(BaseModel):
+    rsi: float
+    macd: float
+    signal: float
+    histogram: float
+    sma_20: Optional[float]
+    sma_50: Optional[float]
+    sma_200: Optional[float]
+
+class Fundamentals(BaseModel):
+    pe_ratio: Optional[float]
+    pb_ratio: Optional[float]
+    dividend_yield: Optional[float]
+    market_cap: Optional[float]
+    roe: Optional[float]
+    roa: Optional[float]
+    debt_equity: Optional[float]
+    sector: Optional[str]
+    industry: Optional[str]
+    company_name: Optional[str]
+
+class StockResponse(BaseModel):
+    ticker: str
+    current_price: float
+    data: List[StockData]
+    indicators: TechnicalIndicators
+    fundamentals: Fundamentals
+
+class RecommendationComponents(BaseModel):
+    momentum: float
+    value: float
+    growth: float
+    quality: float
+    risk: float
+
+class RecommendationResponse(BaseModel):
+    ticker: str
+    score: float
+    recommendation: str
+    components: RecommendationComponents
+
+class PortfolioAllocation(BaseModel):
+    ticker: str
+    weight: float
+
+class PortfolioResponse(BaseModel):
+    allocations: List[PortfolioAllocation]
+    expected_return: float
+    expected_volatility: float
+    sharpe_ratio: float
+
+class ErrorResponse(BaseModel):
+    detail: str
+10. Utility Modules
+src/utils/logger.py
+python
+import logging
+import sys
+from pathlib import Path
+from config.settings import settings
+
+def setup_logger(name: str) -> logging.Logger:
+    """Configure and return a logger with the given name"""
+    logger = logging.getLogger(name)
+    logger.setLevel(settings.LOG_LEVEL)
+    
+    # Create logs directory if it doesn't exist
+    logs_dir = settings.LOG_FILE.parent
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    # File handler
+    file_handler = logging.FileHandler(settings.LOG_FILE)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    
+    return logger
+src/utils/helpers.py
+python
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Optional, Union
+from datetime import datetime, timedelta
+
+def validate_date(date_str: str, format: str = "%Y-%m-%d") -> bool:
+    """Validate date string format"""
+    try:
+        datetime.strptime(date_str, format)
+        return True
+    except ValueError:
+        return False
+
+def convert_to_dataframe(
+    data: Union[Dict, List[Dict]],
+    index_col: Optional[str] = None
+) -> pd.DataFrame:
+    """Convert dictionary or list of dictionaries to DataFrame"""
+    if isinstance(data, dict):
+        df = pd.DataFrame.from_dict(data, orient='index').T
+    elif isinstance(data, list):
+        df = pd.DataFrame(data)
+    else:
+        raise ValueError("Input must be dictionary or list of dictionaries")
+    
+    if index_col and index_col in df.columns:
+        df.set_index(index_col, inplace=True)
+    
+    return df
+
+def resample_data(
+    data: pd.DataFrame,
+    freq: str = 'W',
+    agg_func: str = 'last'
+) -> pd.DataFrame:
+    """Resample time series data to different frequency"""
+    if not isinstance(data.index, pd.DatetimeIndex):
+        raise ValueError("DataFrame must have DatetimeIndex")
+    
+    agg_map = {
+        'open': 'first',
+        'high': 'max',
+        'low': 'min',
+        'close': 'last',
+        'volume': 'sum'
+    }
+    
+    if agg_func == 'ohlc':
+        return data.resample(freq).agg(agg_map)
+    else:
+        return data.resample(freq).agg(agg_func)
+
+def calculate_returns(
+    prices: pd.Series,
+    periods: int = 1,
+    log_returns: bool = False
+) -> pd.Series:
+    """Calculate returns from price series"""
+    if log_returns:
+        return np.log(prices / prices.shift(periods))
+    else:
+        return prices.pct_change(periods)
+
+def calculate_rolling_stats(
+    series: pd.Series,
+    window: int = 21,
+    min_periods: int = 10
+) -> pd.DataFrame:
+    """Calculate rolling statistics for a series"""
+    return pd.DataFrame({
+        'mean': series.rolling(window=window, min_periods=min_periods).mean(),
+        'median': series.rolling(window=window, min_periods=min_periods).median(),
+        'std': series.rolling(window=window, min_periods=min_periods).std(),
+        'min': series.rolling(window=window, min_periods=min_periods).min(),
+        'max': series.rolling(window=window, min_periods=min_periods).max()
+    })
+
+def business_days_between(
+    start_date: Union[str, datetime],
+    end_date: Union[str, datetime],
+    country: str = 'US'
+) -> int:
+    """Calculate business days between two dates"""
+    if isinstance(start_date, str):
+        start_date = datetime.strptime(start_date, "%Y-%m-%d")
+    if isinstance(end_date, str):
+        end_date = datetime.strptime(end_date, "%Y-%m-%d")
+    
+    # Simple implementation - for more accurate results use pandas bdate_range or workalendar
+    weekmask = 'Mon Tue Wed Thu Fri'
+    if country == 'IN':  # India
+        weekmask = 'Mon Tue Wed Thu Fri Sat'
+    
+    return np.busday_count(
+        start_date.date(),
+        end_date.date(),
+        weekmask=weekmask
+    )
+11. Test Files
+tests/test_data_collection.py
+python
+import pytest
+from src.core.data.collectors.yahoo_finance import YahooFinanceCollector
+from src.core.data.collectors.alpha_vantage import AlphaVantageCollector
+from src.core.data.storage.cache import DataCache
+import pandas as pd
+from datetime import datetime, timedelta
+
+@pytest.fixture
+def yahoo_collector():
+    return YahooFinanceCollector("AAPL", cache=False)
+
+@pytest.fixture
+def alpha_collector():
+    return AlphaVantageCollector(cache=False)
+
+@pytest.fixture
+def cache():
+    return DataCache()
+
+def test_yahoo_finance_historical(yahoo_collector):
+    data = yahoo_collector.get_historical_data(period="1mo")
+    assert isinstance(data, pd.DataFrame)
+    assert not data.empty
+    assert 'Close' in data.columns
+
+def test_yahoo_finance_fundamentals(yahoo_collector):
+    fundamentals = yahoo_collector.get_fundamentals()
+    assert isinstance(fundamentals, dict)
+    assert len(fundamentals) > 0
+
+def test_alpha_vantage_intraday(alpha_collector):
+    data = alpha_collector.get_intraday_data("AAPL", interval='5min')
+    assert isinstance(data, pd.DataFrame)
+    assert not data.empty
+    assert '1. open' in data.columns
+
+def test_alpha_vantage_daily(alpha_collector):
+    data = alpha_collector.get_daily_data("AAPL")
+    assert isinstance(data, pd.DataFrame)
+    assert not data.empty
+    assert '4. close' in data.columns
+
+def test_cache_set_get(cache):
+    test_data = {'test': 123}
+    cache.set('test_key', test_data)
+    retrieved = cache.get('test_key')
+    assert retrieved == test_data
+
+def test_cache_exists(cache):
+    test_data = {'test': 456}
+    cache.set('test_key2', test_data)
+    assert cache.exists('test_key2')
+    assert not cache.exists('nonexistent_key')
+
+def test_cache_clear(cache):
+    test_data = {'test': 789}
+    cache.set('test_key3', test_data)
+    cache.clear('test_key3')
+    assert not cache.exists('test_key3')
+tests/test_processing.py
+python
+import pytest
+import pandas as pd
+import numpy as np
+from src.core.processing.technical_indicators import TechnicalIndicators
+from src.core.processing.fundamental_analysis import FundamentalAnalyzer
+from src.core.processing.correlation import CorrelationAnalyzer
+
+@pytest.fixture
+def sample_data():
+    dates = pd.date_range(start='2023-01-01', periods=100)
+    np.random.seed(42)
+    prices = np.cumprod(1 + np.random.normal(0.001, 0.02, len(dates)))
+    volumes = np.random.randint(100000, 1000000, len(dates))
+    return pd.DataFrame({
+        'Open': prices,
+        'High': prices + np.random.uniform(0, 0.5, len(dates)),
+        'Low': prices - np.random.uniform(0, 0.5, len(dates)),
+        'Close': prices,
+        'Volume': volumes
+    }, index=dates)
+
+def test_moving_averages(sample_data):
+    tech = TechnicalIndicators()
+    ma = tech.calculate_moving_averages(sample_data, windows=(5, 10))
+    assert 'SMA_5' in ma
+    assert 'SMA_10' in ma
+    assert len(ma['SMA_5']) == len(sample_data)
+    assert ma['SMA_5'].iloc[-1] == pytest.approx(sample_data['Close'].iloc[-5:].mean())
+
+def test_rsi(sample_data):
+    tech = TechnicalIndicators()
+    rsi = tech.calculate_rsi(sample_data)
+    assert len(rsi) == len(sample_data)
+    assert 0 <= rsi.iloc[-1] <= 100
+
+def test_macd(sample_data):
+    tech = TechnicalIndicators()
+    macd = tech.calculate_macd(sample_data)
+    assert 'macd_line' in macd
+    assert 'signal_line' in macd
+    assert 'histogram' in macd
+    assert len(macd['macd_line']) == len(sample_data)
+
+def test_bollinger_bands(sample_data):
+    tech = TechnicalIndicators()
+    bb = tech.calculate_bollinger_bands(sample_data)
+    assert bb.upper.iloc[-1] > bb.middle.iloc[-1]
+    assert bb.middle.iloc[-1] > bb.lower.iloc[-1]
+    assert bb.percent_b.iloc[-1] >= 0
+
+def test_valuation_metrics():
+    analyzer = FundamentalAnalyzer()
+    metrics = analyzer.calculate_valuation_metrics(
+        price=100,
+        financials={
+            'eps': 5,
+            'book_value': 50,
+            'sales': 200,
+            'ebitda': 40,
+            'enterprise_value': 800,
+            'dividend': 2
+        }
+    )
+    assert metrics.pe_ratio == 20
+    assert metrics.pb_ratio == 2
+    assert metrics.ps_ratio == 0.5
+    assert metrics.ev_ebitda == 20
+    assert metrics.dividend_yield == 0.02
+
+def test_correlation_matrix(sample_data):
+    analyzer = CorrelationAnalyzer()
+    corr_matrix = analyzer.calculate_pairwise_correlation(sample_data)
+    assert corr_matrix.shape == (5, 5)
+    assert corr_matrix.loc['Open', 'Close'] == pytest.approx(1.0, abs=0.01)
+tests/test_analytics.py
+python
+import pytest
+import pandas as pd
+import numpy as np
+from src.core.analytics.prediction_models import StockPredictor, LSTMPredictor
+from src.core.analytics.time_series import TimeSeriesForecaster
+from src.core.analytics.volatility import VolatilityModeler
+
+@pytest.fixture
+def sample_data():
+    dates = pd.date_range(start='2023-01-01', periods=100)
+    np.random.seed(42)
+    prices = np.cumprod(1 + np.random.normal(0.001, 0.02, len(dates)))
+    return pd.DataFrame({'Close': prices}, index=dates)
+
+def test_stock_predictor(sample_data):
+    predictor = StockPredictor(model_type='random_forest')
+    X_train, X_test, y_train, y_test = predictor.prepare_data(sample_data)
+    
+    assert X_train.shape[0] == y_train.shape[0]
+    assert X_test.shape[0] == y_test.shape[0]
+    assert X_train.shape[1] > 5  # Should have several features
+    
+    predictor.train(X_train, y_train)
+    predictions = predictor.predict(X_test)
+    assert len(predictions) == len(y_test)
+    
+    metrics = predictor.evaluate(X_test, y_test)
+    assert 'mse' in metrics
+    assert 'mae' in metrics
+    assert 'r2' in metrics
+
+def test_lstm_predictor(sample_data):
+    predictor = LSTMPredictor(lookback=10, epochs=1)
+    (X_train, y_train), (X_test, y_test) = predictor.prepare_data(sample_data)
+    
+    assert X_train.shape[0] == y_train.shape[0]
+    assert X_test.shape[0] == y_test.shape[0]
+    assert X_train.shape[1] == predictor.lookback
+    
+    history = predictor.train(X_train, y_train)
+    assert len(history.history['loss']) == predictor.epochs
+    
+    predictions = predictor.predict(X_test)
+    assert len(predictions) == len(y_test)
+    
+    metrics = predictor.evaluate(X_test, y_test)
+    assert 'mse' in metrics
+    assert 'mae' in metrics
+    assert 'r2' in metrics
+
+def test_time_series_forecaster(sample_data):
+    forecaster = TimeSeriesForecaster()
+    params, rmse, mae = forecaster.auto_arima(sample_data['Close'], seasonal=False)
+    
+    assert 'order' in params
+    assert rmse >= 0
+    assert mae >= 0
+
+def test_volatility_modeler(sample_data):
+    modeler = VolatilityModeler()
+    returns = sample_data['Close'].pct_change().dropna()
+    result = modeler.garch_model(returns)
+    
+    assert 'conditional_volatility' in result
+    assert 'value_at_risk' in result
+    assert result['conditional_volatility'] > 0
+tests/test_visualization.py
+python
+import pytest
+import pandas as pd
+import numpy as np
+from src.core.visualization.charts import StockVisualizer
+from plotly.graph_objects import Figure
+
+@pytest.fixture
+def sample_data():
+    dates = pd.date_range(start='2023-01-01', periods=100)
+    np.random.seed(42)
+    prices = np.cumprod(1 + np.random.normal(0.001, 0.02, len(dates)))
+    volumes = np.random.randint(100000, 1000000, len(dates))
+    return pd.DataFrame({
+        'Open': prices,
+        'High': prices + np.random.uniform(0, 0.5, len(dates)),
+        'Low': prices - np.random.uniform(0, 0.5, len(dates)),
+        'Close': prices,
+        'Volume': volumes,
+        'SMA_20': prices.rolling(20).mean(),
+        'RSI': np.random.uniform(30, 70, len(dates)),
+        'MACD': np.random.normal(0, 1, len(dates)),
+        'Signal': np.random.normal(0, 1, len(dates)),
+        'Histogram': np.random.normal(0, 1, len(dates))
+    }, index=dates)
+
+def test_candlestick_chart(sample_data):
+    visualizer = StockVisualizer()
+    fig = visualizer.plot_candlestick(sample_data)
+    
+    assert isinstance(fig, Figure)
+    assert len(fig.data) >= 1  # At least the candlestick trace
+    
+    # Test with indicators
+    fig_with_indicators = visualizer.plot_candlestick(
+        sample_data,
+        show_volume=True,
+        show_rsi=True,
+        show_macd=True
+    )
+    assert len(fig_with_indicators.data) >= 4  # Candlestick + volume + RSI + MACD
+
+def test_correlation_heatmap(sample_data):
+    visualizer = StockVisualizer()
+    corr_matrix = sample_data.corr()
+    fig = visualizer.plot_correlation_heatmap(corr_matrix)
+    
+    assert isinstance(fig, Figure)
+    assert len(fig.data) == 1  # Heatmap trace
+
+def test_portfolio_allocation_chart():
+    visualizer = StockVisualizer()
+    allocations = {'AAPL': 0.5, 'MSFT': 0.3, 'GOOG': 0.2}
+    fig = visualizer.plot_portfolio_allocation(allocations)
+    
+    assert isinstance(fig, Figure)
+    assert len(fig.data) == 1  # Pie chart trace
+
+def test_efficient_frontier_chart():
+    visualizer = StockVisualizer()
+    returns = np.random.normal(0.001, 0.02, 100)
+    volatility = np.random.uniform(0.1, 0.3, 100)
+    sharpe = (returns - 0.02) / volatility
+    fig = visualizer.plot_efficient_frontier(returns, volatility, sharpe)
+    
+    assert isinstance(fig, Figure)
+    assert len(fig.data) == 2  # All portfolios + max sharpe marker
+12. Configuration and Requirements
+requirements.txt
+text
+# Core dependencies
+python>=3.10
+pandas>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+statsmodels>=0.13.0
+scikit-learn>=1.2.0
+yfinance>=0.2.0
+alpha-vantage>=2.3.0
+requests>=2.28.0
+
+# Visualization
+plotly>=5.0.0
+matplotlib>=3.6.0
+seaborn>=0.12.0
+
+# Machine Learning
+tensorflow>=2.10.0
+torch>=1.12.0
+xgboost>=1.7.0
+prophet>=1.1.0
+pmdarima>=2.0.0
+arch>=5.3.0
+
+# Web/API
+streamlit>=1.12.0
+fastapi>=0.85.0
+uvicorn>=0.19.0
+pydantic>=1.10.0
+
+# Database
+sqlalchemy>=1.4.0
+psycopg2-binary>=2.9.0
+redis>=4.3.0
+
+# Utilities
+python-dotenv>=0.21.0
+loguru>=0.6.0
+tqdm>=4.64.0
+joblib>=1.2.0
+
+# Testing
+pytest>=7.2.0
+pytest-cov>=4.0.0
+Dockerfile
+dockerfile
+# Use official Python image
+FROM python:3.10-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+# Set work directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy project
+COPY . .
+
+# Expose ports
+EXPOSE 8501  # Streamlit
+EXPOSE 8000  # FastAPI
+
+# Command to run the application
+CMD ["streamlit", "run", "src/web/dashboard.py", "--server.port=8501", "--server.address=0.0.0.0"]
+README.md
+markdown
+# Stock Market Analysis Tool
+
+A comprehensive Python application for stock market analysis with:
+- Real-time and historical data collection
+- Technical and fundamental analysis
+- Predictive modeling
+- Visualization dashboards
+- Investment recommendations
+- Portfolio management
+
+## Features
+
+1. **Data Collection**
+   - Yahoo Finance, Alpha Vantage, NSE/BSE APIs
+   - Real-time and historical data
+   - Corporate actions tracking
+
+2. **Data Processing**
+   - Technical indicators (SMA, EMA, RSI, MACD, Bollinger Bands)
+   - Fundamental metrics (P/E, P/B, Debt/Equity)
+   - Volume analysis and correlation matrices
+
+3. **Predictive Analytics**
+   - Machine learning models (LSTM, Random Forest, XGBoost)
+   - Time series forecasting (ARIMA, Prophet)
+   - Volatility prediction
+
+4. **Visualization**
+   - Interactive candlestick charts
+   - Performance comparison charts
+   - Portfolio allocation visualizations
+
+5. **Recommendation System**
+   - Automated scoring based on multiple factors
+   - Momentum vs value strategies
+   - Risk profile-based suggestions
+
+6. **Portfolio Management**
+   - Virtual portfolio tracking
+   - Performance benchmarking
+   - Risk assessment tools
+
+## Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/stock-analysis-tool.git
+   cd stock-analysis-tool
+Create and activate a virtual environment:
+
+bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+Install dependencies:
+
+bash
+pip install -r requirements.txt
+Set up environment variables:
+Create a .env file in the root directory with your API keys:
+
+text
+ALPHA_VANTAGE_API_KEY=your_api_key
+YAHOO_FINANCE_API_KEY=your_api_key
+DATABASE_URL=postgresql://user:password@localhost:5432/stockdb
+Usage
+Web Dashboard
+bash
+streamlit run src/web/dashboard.py
+API Server
+bash
+uvicorn src.api.endpoints:app --reload
+Docker
+bash
+docker build -t stock-analysis .
+docker run -p 8501:8501 -p 8000:8000 stock-analysis
+Project Structure
+text
+stock_analysis_tool/
+├── data/                   # Data storage
+├── docs/                   # Documentation
+├── tests/                  # Unit and integration tests
+├── config/                 # Configuration files
+├── src/                    # Source code
+│   ├── core/               # Core functionality modules
+│   ├── api/                # API endpoints
+│   ├── web/                # Web dashboard
+│   └── utils/              # Utility functions
+├── requirements.txt        # Dependencies
+├── Dockerfile              # Docker configuration
+└── README.md              # Project documentation
+License
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+text
+
+This completes the full implementation of the Stock Market Analysis Tool with all files and their complete contents. The application provides a comprehensive solution for stock market analysis with data collection, processing, analytics, visualization, and recommendation capabilities.
+
+The implementation includes:
+
+1. Data collection from multiple sources (Yahoo Finance, Alpha Vantage)
+2. Data processing with technical indicators and fundamental analysis
+3. Predictive analytics with machine learning and time series models
+4. Visualization with interactive charts and dashboards
+5. Recommendation system with scoring algorithms
+6. Portfolio management tools
+7. Web dashboard and API interfaces
+8. Comprehensive testing suite
+9. Docker support for easy deployment
+
+The application can be extended with additional data sources, models, and features as needed.
+This response is AI-generated, for reference only.
